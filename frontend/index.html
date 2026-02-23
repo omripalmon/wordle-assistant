@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wordle Helper</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: #121213;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────────── */
+    header { text-align: center; margin-bottom: 2rem; }
+    h1 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .subtitle { color: #818384; font-size: 0.85rem; }
+
+    /* ── Upload zone ──────────────────────────────────────────────────────── */
+    #dropzone {
+      width: min(500px, 100%);
+      border: 2px dashed #3a3a3c;
+      border-radius: 14px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      user-select: none;
+    }
+    #dropzone:hover,
+    #dropzone.drag-over { border-color: #538d4e; background: rgba(83,141,78,0.07); }
+    #dropzone .icon { font-size: 3rem; margin-bottom: 0.75rem; display: block; }
+    #dropzone .primary { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    #dropzone .secondary { color: #818384; font-size: 0.82rem; line-height: 1.5; }
+    #file-input { display: none; }
+
+    /* ── Preview ──────────────────────────────────────────────────────────── */
+    #preview-section { display: none; margin-top: 1.5rem; text-align: center; }
+    #preview-img {
+      max-width: min(280px, 100%);
+      max-height: 280px;
+      border-radius: 10px;
+      object-fit: contain;
+      border: 1px solid #3a3a3c;
+    }
+    #reselect-btn {
+      display: inline-block;
+      margin-top: 0.6rem;
+      font-size: 0.8rem;
+      color: #818384;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #reselect-btn:hover { color: #ffffff; }
+
+    /* ── Spinner ──────────────────────────────────────────────────────────── */
+    #spinner {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.9rem;
+      margin-top: 2.5rem;
+    }
+    .spinner-ring {
+      width: 52px; height: 52px;
+      border: 5px solid #3a3a3c;
+      border-top-color: #538d4e;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #spinner p { color: #818384; font-size: 0.88rem; }
+
+    /* ── Error ────────────────────────────────────────────────────────────── */
+    #error-box {
+      display: none;
+      margin-top: 1.5rem;
+      background: #2c0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      width: min(600px, 100%);
+      line-height: 1.5;
+    }
+
+    /* ── Results container ────────────────────────────────────────────────── */
+    #results {
+      display: none;
+      width: min(700px, 100%);
+      margin-top: 2.5rem;
+    }
+
+    section { margin-bottom: 2.2rem; }
+
+    h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #818384;
+      margin-bottom: 0.8rem;
+      border-bottom: 1px solid #2a2a2c;
+      padding-bottom: 0.4rem;
+    }
+
+    /* ── Guess tiles ──────────────────────────────────────────────────────── */
+    .guess-row { display: flex; gap: 5px; margin-bottom: 5px; }
+    .tile {
+      width: 52px; height: 52px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; font-weight: 800;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .tile.green  { background: #538d4e; }
+    .tile.yellow { background: #b59f3b; }
+    .tile.black  { background: #3a3a3c; }
+    .tile.unknown { background: #3a3a3c; opacity: 0.5; }
+
+    /* ── Best-guess cards ─────────────────────────────────────────────────── */
+    .best-cards { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .best-card {
+      flex: 1 1 200px;
+      background: #1a1a1b;
+      border: 1px solid #2a2a2c;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+    }
+    .best-card .label {
+      font-size: 0.72rem; color: #818384;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 0.4rem;
+    }
+    .best-card .word {
+      font-size: 1.7rem; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.18em;
+      color: #538d4e;
+    }
+    .best-card .meta { font-size: 0.75rem; color: #818384; margin-top: 0.3rem; }
+
+    /* ── Suggestions table ────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    .suggestions-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .suggestions-table th {
+      text-align: left;
+      padding: 7px 12px;
+      color: #818384;
+      font-weight: 600;
+      border-bottom: 1px solid #2a2a2c;
+      white-space: nowrap;
+    }
+    .suggestions-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #1e1e1f;
+      white-space: nowrap;
+    }
+    .suggestions-table tr:last-child td { border-bottom: none; }
+    .suggestions-table tr.rank-1 td { color: #538d4e; font-weight: 700; }
+    .word-cell {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 600;
+    }
+    .candidate-badge {
+      display: inline-block;
+      background: rgba(83,141,78,0.2);
+      color: #538d4e;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Candidates list ──────────────────────────────────────────────────── */
+    #candidate-count { color: #818384; font-size: 0.82rem; margin-bottom: 0.6rem; }
+    #candidates-list {
+      display: flex; flex-wrap: wrap; gap: 5px;
+      max-height: 160px; overflow-y: auto;
+      padding-right: 4px;
+    }
+    #candidates-list::-webkit-scrollbar { width: 4px; }
+    #candidates-list::-webkit-scrollbar-track { background: transparent; }
+    #candidates-list::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 4px; }
+    .candidate-pill {
+      background: #1a1a1b;
+      border: 1px solid #2a2a2c;
+      border-radius: 5px;
+      padding: 3px 9px;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── No candidates notice ─────────────────────────────────────────────── */
+    .notice {
+      color: #818384; font-size: 0.88rem;
+      font-style: italic; padding: 0.5rem 0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Wordle Helper</h1>
+    <p class="subtitle">Paste or upload a Wordle screenshot — get the optimal next guess</p>
+  </header>
+
+  <!-- ── Upload / paste zone ──────────────────────────────────────────────── -->
+  <div id="dropzone" role="button" tabindex="0"
+       aria-label="Click, drag-and-drop, or paste a Wordle screenshot">
+    <span class="icon">📋</span>
+    <p class="primary">Paste your Wordle screenshot</p>
+    <p class="secondary">
+      Press <kbd>Ctrl+V</kbd> / <kbd>⌘V</kbd> anywhere on this page<br>
+      or drag &amp; drop an image here, or click to browse
+    </p>
+  </div>
+  <input type="file" id="file-input" accept="image/*" />
+
+  <!-- ── Image preview ────────────────────────────────────────────────────── -->
+  <div id="preview-section">
+    <img id="preview-img" alt="Wordle screenshot preview" />
+    <br />
+    <span id="reselect-btn">Choose a different image</span>
+  </div>
+
+  <!-- ── Spinner ──────────────────────────────────────────────────────────── -->
+  <div id="spinner">
+    <div class="spinner-ring"></div>
+    <p>Analysing screenshot&hellip; this may take up to 30 seconds</p>
+  </div>
+
+  <!-- ── Error ────────────────────────────────────────────────────────────── -->
+  <div id="error-box"></div>
+
+  <!-- ── Results ──────────────────────────────────────────────────────────── -->
+  <div id="results">
+
+    <!-- Identified guesses with colour-coded tiles -->
+    <section>
+      <h2>Identified Guesses</h2>
+      <div id="guesses-display"></div>
+    </section>
+
+    <!-- Best overall / best valid candidate cards -->
+    <section>
+      <h2>Best Next Guess</h2>
+      <div class="best-cards">
+        <div class="best-card">
+          <div class="label">Best Overall</div>
+          <div class="word" id="best-overall-word">—</div>
+          <div class="meta" id="best-overall-meta"></div>
+        </div>
+        <div class="best-card">
+          <div class="label">Best Valid Candidate</div>
+          <div class="word" id="best-valid-word">—</div>
+          <div class="meta" id="best-valid-meta"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Top entropy-ranked suggestions table -->
+    <section>
+      <h2>Top Suggestions</h2>
+      <div class="table-wrap">
+        <table class="suggestions-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Word</th>
+              <th>Entropy (bits)</th>
+              <th>Adjusted</th>
+              <th>Candidate?</th>
+            </tr>
+          </thead>
+          <tbody id="suggestions-body"></tbody>
+        </table>
+      </div>
+      <p id="bonus-note" style="margin-top:.6rem;font-size:.75rem;color:#818384;"></p>
+    </section>
+
+    <!-- Remaining candidate words -->
+    <section>
+      <h2>Remaining Candidates</h2>
+      <p id="candidate-count"></p>
+      <div id="candidates-list"></div>
+    </section>
+
+  </div><!-- #results -->
+
+  <script>
+    // ── API URL ─────────────────────────────────────────────────────────────
+    // Replace the string below with your Railway service URL after deployment.
+    // Example: "https://wordle-helper-api.up.railway.app"
+    const API_URL = "https://your-project.up.railway.app";
+
+    // ── DOM refs ────────────────────────────────────────────────────────────
+    const dropzone    = document.getElementById("dropzone");
+    const fileInput   = document.getElementById("file-input");
+    const previewSec  = document.getElementById("preview-section");
+    const previewImg  = document.getElementById("preview-img");
+    const reselectBtn = document.getElementById("reselect-btn");
+    const spinner     = document.getElementById("spinner");
+    const errorBox    = document.getElementById("error-box");
+    const resultsEl   = document.getElementById("results");
+
+    // ── Upload interactions ─────────────────────────────────────────────────
+    dropzone.addEventListener("click",   () => fileInput.click());
+    dropzone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") fileInput.click();
+    });
+    reselectBtn.addEventListener("click", () => fileInput.click());
+
+    // Drag and drop
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropzone.classList.add("drag-over");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith("image/")) processFile(file);
+    });
+
+    // File picker
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) processFile(fileInput.files[0]);
+    });
+
+    // Clipboard paste — works anywhere on the page
+    document.addEventListener("paste", (e) => {
+      const items = Array.from(e.clipboardData.items);
+      const imgItem = items.find((i) => i.type.startsWith("image/"));
+      if (imgItem) processFile(imgItem.getAsFile());
+    });
+
+    // ── Core: upload + analyse ──────────────────────────────────────────────
+    function processFile(file) {
+      // Show preview
+      const objUrl = URL.createObjectURL(file);
+      previewImg.src = objUrl;
+      previewImg.onload = () => URL.revokeObjectURL(objUrl);
+      previewSec.style.display = "block";
+      dropzone.style.display   = "none";
+
+      // Reset state
+      errorBox.style.display   = "none";
+      resultsEl.style.display  = "none";
+      spinner.style.display    = "flex";
+
+      const form = new FormData();
+      form.append("image", file);
+
+      fetch(`${API_URL}/analyze`, { method: "POST", body: form })
+        .then((res) => {
+          if (!res.ok) {
+            return res.json().then((j) => {
+              throw new Error(j.detail || `Server error ${res.status}`);
+            });
+          }
+          return res.json();
+        })
+        .then(renderResults)
+        .catch((err) => {
+          spinner.style.display = "none";
+          errorBox.textContent  = `⚠ ${err.message}`;
+          errorBox.style.display = "block";
+          // Show dropzone again so user can try another image
+          dropzone.style.display = "block";
+          previewSec.style.display = "none";
+        });
+    }
+
+    // ── Render results ──────────────────────────────────────────────────────
+    function renderResults(data) {
+      spinner.style.display = "none";
+
+      // 1. Guesses with colour-coded tiles
+      const guessesDiv = document.getElementById("guesses-display");
+      guessesDiv.innerHTML = "";
+      for (const guess of data.guesses) {
+        const row = document.createElement("div");
+        row.className = "guess-row";
+        for (const tile of guess.tiles) {
+          const t = document.createElement("div");
+          const color = tile.color || "black";
+          t.className = `tile ${color === "unknown" ? "unknown" : color}`;
+          t.textContent = tile.letter || "?";
+          t.title = `${tile.letter} — ${color}`;
+          row.appendChild(t);
+        }
+        guessesDiv.appendChild(row);
+      }
+
+      // 2. Best-guess cards
+      function fillCard(wordId, metaId, obj) {
+        const wEl = document.getElementById(wordId);
+        const mEl = document.getElementById(metaId);
+        if (obj) {
+          wEl.textContent = obj.word.toUpperCase();
+          mEl.textContent = `entropy ${obj.raw} → adjusted ${obj.adjusted}`;
+        } else {
+          wEl.textContent = "—";
+          mEl.textContent = "";
+        }
+      }
+      fillCard("best-overall-word", "best-overall-meta", data.best_overall);
+      fillCard("best-valid-word",   "best-valid-meta",   data.best_valid);
+
+      // 3. Top suggestions table
+      const tbody = document.getElementById("suggestions-body");
+      tbody.innerHTML = "";
+      (data.top_suggestions || []).forEach((s, i) => {
+        const tr = document.createElement("tr");
+        if (i === 0) tr.classList.add("rank-1");
+        const candidateBadge = s.is_candidate
+          ? `<span class="candidate-badge">✓ Yes</span>`
+          : "";
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td class="word-cell">${s.word}</td>
+          <td>${s.raw_entropy}</td>
+          <td>${s.adjusted_entropy}</td>
+          <td>${candidateBadge}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      // Bonus footnote
+      const bonusNote = document.getElementById("bonus-note");
+      if (data.bonus && data.candidate_count > 1) {
+        bonusNote.textContent =
+          `Valid candidates receive a +${data.bonus} bit bonus ` +
+          `((1/N)·log₂(N), N=${data.candidate_count}) in the adjusted score.`;
+      } else {
+        bonusNote.textContent = "";
+      }
+
+      // 4. Remaining candidates
+      const countP  = document.getElementById("candidate-count");
+      const listDiv = document.getElementById("candidates-list");
+      const n = data.candidate_count || 0;
+      countP.textContent = `${n} word${n !== 1 ? "s" : ""} remain`;
+      listDiv.innerHTML = "";
+
+      if (n === 0) {
+        const p = document.createElement("p");
+        p.className = "notice";
+        p.textContent = "No words match the current constraints.";
+        listDiv.appendChild(p);
+      } else {
+        for (const word of (data.candidates || [])) {
+          const pill = document.createElement("span");
+          pill.className = "candidate-pill";
+          pill.textContent = word.toUpperCase();
+          listDiv.appendChild(pill);
+        }
+      }
+
+      resultsEl.style.display = "block";
+      resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  </script>
+
+</body>
+</html>
