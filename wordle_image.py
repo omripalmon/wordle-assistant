@@ -419,10 +419,72 @@ def _find_tile_cols(
     if in_seg:
         segments.append((seg_start, image.width - 1))
 
-    # Wide segments → genuine filled tiles (played row)
-    cols = [(l, r) for l, r in segments if r - l + 1 >= min_tile_width]
-    if cols:
-        return cols
+    # Wide segments → genuine filled tiles (played row).
+    #
+    # However, large bold letters can create white stripes through the
+    # centre of a tile at the midline (e.g. the crossbar of 'A', counter
+    # of 'B', thin strokes of 'I'/'L'), splitting one tile into several
+    # wide segments separated by narrow intra-tile gaps.
+    #
+    # To distinguish intra-tile gaps (letter strokes) from inter-tile gaps
+    # (background between tiles) we look at the gap distribution and find
+    # a natural break point.  For a standard 5-tile row:
+    #
+    #   - If we have exactly 5 wide segments already → no merge needed.
+    #   - If we have > 5 wide segments → some are split tiles; merge the
+    #     pairs separated by the *smallest* gap class.
+    #
+    # Algorithm:
+    #   1. Collect all gaps between consecutive wide segments.
+    #   2. Find the median gap (this is the inter-tile gap).
+    #   3. Merge any pair of adjacent segments whose gap is strictly less
+    #      than the median, repeating until stable.
+    wide = [(l, r) for l, r in segments if r - l + 1 >= min_tile_width]
+    if wide:
+        # Iteratively merge split-tile sub-segments caused by letter strokes.
+        #
+        # Large bold white letters on a coloured tile create white stripes at
+        # the scan midline (e.g. the counter of 'A', 'B', 'R'; crossbars of
+        # 'H'; thin strokes of 'I', 'L'; serifs of 'T').  These split one tile
+        # into multiple wide segments separated by gaps that are NOT the regular
+        # inter-tile gap.
+        #
+        # Key observation: the inter-tile gap (background between adjacent
+        # tiles) appears *multiple times* and is the most frequent gap value
+        # in the row.  Intra-tile letter gaps are rarer (at most 2–3 per tile)
+        # and are either smaller or larger than the inter-tile gap.
+        #
+        # Algorithm (repeated until stable or ≤5 segments):
+        #   1. Compute all gaps between adjacent wide segments.
+        #   2. Find the *mode* (most common) gap — this is the inter-tile gap.
+        #   3. Merge pairs whose gap is NOT the mode (these are intra-tile).
+        for _ in range(20):
+            if len(wide) <= 5:
+                break
+            gaps = [wide[i + 1][0] - wide[i][1] - 1 for i in range(len(wide) - 1)]
+            if not gaps:
+                break
+            # Find mode gap (most frequently occurring inter-tile gap)
+            from collections import Counter
+            mode_gap = Counter(gaps).most_common(1)[0][0]
+            # Merge any pair whose gap differs from the mode
+            merged: list[tuple[int, int]] = []
+            i = 0
+            did_merge = False
+            while i < len(wide):
+                if i + 1 < len(wide):
+                    g = wide[i + 1][0] - wide[i][1] - 1
+                    if g != mode_gap:
+                        merged.append((wide[i][0], wide[i + 1][1]))
+                        i += 2
+                        did_merge = True
+                        continue
+                merged.append(wide[i])
+                i += 1
+            wide = merged
+            if not did_merge:
+                break
+        return wide
 
     # -----------------------------------------------------------------------
     # Pass 2: border reconstruction for empty light-mode rows.
