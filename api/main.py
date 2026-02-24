@@ -137,19 +137,22 @@ async def debug() -> dict[str, Any]:
 
 @app.post("/diagnose")
 async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
-    """Deep diagnostic — returns per-tile RGB, colour classification, and OCR letter.
+    """Deep diagnostic — returns per-tile RGB, colour, OCR letter, and preprocessed tile b64.
 
     Upload the same image you'd send to /analyze. Returns a row-by-row,
-    tile-by-tile breakdown of exactly what the parser sees, so OCR and
-    colour issues can be spotted without needing server logs.
+    tile-by-tile breakdown including the base64-encoded preprocessed image
+    that Tesseract actually receives, so OCR issues can be inspected.
     """
+    import base64
+    import colorsys
+    import io
     import colorsys
     from wordle_image import (
         _background_color, _find_tile_rows, _find_tile_cols,
         _sample_tile_color, _ocr_tile_letter, classify_tile_color,
-        _color_distance,
+        _color_distance, _tesseract_available,
     )
-    from PIL import Image as PILImage
+    from PIL import Image as PILImage, ImageOps, ImageFilter
 
     suffix = Path(image.filename or "upload.png").suffix or ".png"
     tmp_path: str | None = None
@@ -164,7 +167,7 @@ async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
 
         rows_out = []
         reference_cols = None
-        for row_i, (top, bottom) in enumerate(tile_rows):
+        for row_i, (top, bottom) in enumerate(tile_rows[:2]):  # only first 2 played rows
             cols = _find_tile_cols(img, top, bottom, reference_cols=reference_cols)
             if len(cols) == 5:
                 reference_cols = cols
@@ -175,6 +178,33 @@ async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
                 tile_color = classify_tile_color(rgb)
                 letter = _ocr_tile_letter(img, left, right, top, bottom)
                 h, s, v = colorsys.rgb_to_hsv(rgb[0]/255, rgb[1]/255, rgb[2]/255)
+
+                # Build the preprocessed image Tesseract actually receives
+                tile_b64 = None
+                try:
+                    w, wh = right - left, bottom - top
+                    factor = 4
+                    scaled = img.resize((img.width * factor, img.height * factor), PILImage.LANCZOS)
+                    inset_x = max(factor, (w // 10) * factor)
+                    inset_y = max(factor, (wh // 10) * factor)
+                    crop = scaled.crop((left*factor+inset_x, top*factor+inset_y,
+                                        right*factor-inset_x, bottom*factor-inset_y))
+                    grey = crop.convert("L")
+                    pixels = list(grey.getdata())
+                    lo, hi = min(pixels), max(pixels)
+                    if hi > lo:
+                        grey = grey.point(lambda p: int((p - lo) * 255 / (hi - lo)))
+                    inv = ImageOps.invert(grey)
+                    sharp = inv.filter(ImageFilter.SHARPEN)
+                    pad = max(8, sharp.width // 8)
+                    padded = PILImage.new("L", (sharp.width + 2*pad, sharp.height + 2*pad), 255)
+                    padded.paste(sharp, (pad, pad))
+                    buf = io.BytesIO()
+                    padded.save(buf, format="PNG")
+                    tile_b64 = base64.b64encode(buf.getvalue()).decode()
+                except Exception as ex:
+                    tile_b64 = f"error:{ex}"
+
                 tiles_out.append({
                     "col": col_i + 1,
                     "bounds": {"left": left, "right": right},
@@ -185,6 +215,7 @@ async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
                     "color": tile_color.label,
                     "color_code": tile_color.code,
                     "ocr_letter": letter,
+                    "tile_b64": tile_b64,
                 })
             rows_out.append({
                 "row": row_i + 1,
