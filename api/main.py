@@ -135,6 +135,75 @@ async def debug() -> dict[str, Any]:
     }
 
 
+@app.post("/diagnose")
+async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
+    """Deep diagnostic — returns per-tile RGB, colour classification, and OCR letter.
+
+    Upload the same image you'd send to /analyze. Returns a row-by-row,
+    tile-by-tile breakdown of exactly what the parser sees, so OCR and
+    colour issues can be spotted without needing server logs.
+    """
+    import colorsys
+    from wordle_image import (
+        _background_color, _find_tile_rows, _find_tile_cols,
+        _sample_tile_color, _ocr_tile_letter, classify_tile_color,
+        _color_distance,
+    )
+    from PIL import Image as PILImage
+
+    suffix = Path(image.filename or "upload.png").suffix or ".png"
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+            tmp.write(await image.read())
+
+        img = PILImage.open(tmp_path).convert("RGB")
+        bg = _background_color(img)
+        tile_rows = _find_tile_rows(img)
+
+        rows_out = []
+        reference_cols = None
+        for row_i, (top, bottom) in enumerate(tile_rows):
+            cols = _find_tile_cols(img, top, bottom, reference_cols=reference_cols)
+            if len(cols) == 5:
+                reference_cols = cols
+
+            tiles_out = []
+            for col_i, (left, right) in enumerate(cols):
+                rgb = _sample_tile_color(img, left, right, top, bottom)
+                tile_color = classify_tile_color(rgb)
+                letter = _ocr_tile_letter(img, left, right, top, bottom)
+                h, s, v = colorsys.rgb_to_hsv(rgb[0]/255, rgb[1]/255, rgb[2]/255)
+                tiles_out.append({
+                    "col": col_i + 1,
+                    "bounds": {"left": left, "right": right},
+                    "rgb": list(rgb),
+                    "hue": round(h * 360, 1),
+                    "sat": round(s, 3),
+                    "val": round(v, 3),
+                    "color": tile_color.label,
+                    "color_code": tile_color.code,
+                    "ocr_letter": letter,
+                })
+            rows_out.append({
+                "row": row_i + 1,
+                "bounds": {"top": top, "bottom": bottom},
+                "col_count": len(cols),
+                "tiles": tiles_out,
+            })
+
+        return {
+            "image_size": {"width": img.width, "height": img.height},
+            "background_rgb": list(bg),
+            "row_count": len(tile_rows),
+            "rows": rows_out,
+        }
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------------------
 # Analysis endpoint
 # ---------------------------------------------------------------------------
