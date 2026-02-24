@@ -398,6 +398,17 @@
     function renderResults(data) {
       spinner.style.display = "none";
 
+      // 0. OCR warning banner
+      const existingWarn = document.getElementById("ocr-warning");
+      if (existingWarn) existingWarn.remove();
+      if (data.ocr_warning) {
+        const warn = document.createElement("div");
+        warn.id = "ocr-warning";
+        warn.style.cssText = "background:#b59f3b;color:#fff;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:0.9rem;";
+        warn.textContent = "⚠ " + data.ocr_warning;
+        document.getElementById("results").prepend(warn);
+      }
+
       // 1. Guesses with colour-coded tiles
       const guessesDiv = document.getElementById("guesses-display");
       guessesDiv.innerHTML = "";

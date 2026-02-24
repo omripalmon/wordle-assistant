@@ -101,6 +101,40 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "words_loaded": str(len(RAW_WORDS))}
 
 
+@app.get("/debug")
+async def debug() -> dict[str, Any]:
+    """Diagnostic endpoint — reports Tesseract availability and path."""
+    import shutil
+    tess_path = shutil.which("tesseract")
+    tess_version: str | None = None
+    tessdata_prefix = os.environ.get("TESSDATA_PREFIX", "not set")
+    if tess_path:
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["tesseract", "--version"], capture_output=True, text=True, timeout=5
+            )
+            tess_version = (result.stdout or result.stderr).strip().splitlines()[0]
+        except Exception as exc:
+            tess_version = f"error: {exc}"
+    # Check if pytesseract can see it
+    try:
+        import pytesseract
+        pytesseract_version = pytesseract.get_tesseract_version()
+        pytesseract_ok = True
+    except Exception as exc:
+        pytesseract_version = str(exc)
+        pytesseract_ok = False
+    return {
+        "tesseract_path": tess_path,
+        "tesseract_version": tess_version,
+        "tessdata_prefix": tessdata_prefix,
+        "pytesseract_ok": pytesseract_ok,
+        "pytesseract_version": str(pytesseract_version),
+        "words_loaded": len(RAW_WORDS),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Analysis endpoint
 # ---------------------------------------------------------------------------
@@ -164,13 +198,24 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
                 detail="No guesses could be extracted from the image.",
             )
 
+        # Check if OCR produced any real letters — '?' means Tesseract couldn't
+        # read the tile.  We still return colour-based results but cannot derive
+        # letter constraints from unknown words.
+        ocr_failed = all("?" in word for word, _ in raw_guesses)
+
         # ------------------------------------------------------------------
         # 3. Convert (word, response) pairs to Wordle constraints
+        #    Skip guesses whose letters are unknown (OCR returned '?????').
         # ------------------------------------------------------------------
-        guess_args = [f"{word},{response}" for word, response in raw_guesses]
+        known_guesses = [
+            (word, response)
+            for word, response in raw_guesses
+            if word.replace("?", "").strip() != "" and word.isalpha()
+        ]
+        guess_args = [f"{word},{response}" for word, response in known_guesses]
         try:
             known_positions, excluded_positions, min_occurrences, max_occurrences = (
-                parse_guesses(guess_args)
+                parse_guesses(guess_args) if guess_args else ({}, {}, {}, {})
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"Constraint error: {exc}") from exc
@@ -263,6 +308,13 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
             "best_overall": _fmt(best_overall),
             "best_valid": _fmt(best_valid),
             "bonus": round(bonus, 4),
+            "ocr_failed": ocr_failed,
+            "ocr_warning": (
+                "Letter OCR unavailable on this server — tile colours were read "
+                "correctly but letter constraints could not be applied. "
+                "Results are based on colour patterns only."
+                if ocr_failed else None
+            ),
         }
 
     finally:
