@@ -395,134 +395,85 @@ def _find_tile_cols(
         List of (left, right) pixel-column pairs for each detected tile.
     """
     bg = _background_color(image)
-    mid_y = (top + bottom) // 2
+    tile_h = bottom - top + 1
 
-    scores = [
-        _color_distance(image.getpixel((x, mid_y))[:3], bg)
-        for x in range(image.width)
-    ]
+    # -----------------------------------------------------------------------
+    # Build a column "presence" profile by sampling MULTIPLE horizontal scan
+    # lines across the tile height, not just the midline.
+    #
+    # Scanning only the midline fails when a large bold letter (M, W, A, B…)
+    # places a white stroke exactly at mid-height, creating false gaps.
+    # By aggregating many scanlines, each column x gets a vote count equal to
+    # the number of scan rows where it differs from the background.  Columns
+    # that are part of a tile fill register votes on nearly every scan row,
+    # while letter-stroke gaps only miss a few rows — so the profile stays
+    # high across the entire tile width regardless of the letter shape.
+    #
+    # For empty tiles (border-only), the profile is near-zero everywhere
+    # except at the thin left/right border columns.
+    # -----------------------------------------------------------------------
+    # Sample ~20 evenly-spaced rows within the tile, skipping top/bottom 10%
+    # to avoid border pixels affecting the profile.
+    margin_y = max(1, tile_h // 10)
+    scan_ys = list(range(top + margin_y, bottom - margin_y + 1,
+                         max(1, (tile_h - 2 * margin_y) // 20)))
+    if not scan_ys:
+        scan_ys = [(top + bottom) // 2]
 
-    threshold = 15.0  # catches thin borders and filled tiles alike
+    threshold = 15.0
+    votes = [0] * image.width
+    for y in scan_ys:
+        for x in range(image.width):
+            if _color_distance(image.getpixel((x, y))[:3], bg) >= threshold:
+                votes[x] += 1
+
+    # A column belongs to a tile if it has votes on at least 30% of scan rows
+    min_votes = max(1, len(scan_ys) * 3 // 10)
+    active = [v >= min_votes for v in votes]
+
     # -----------------------------------------------------------------------
-    # Pass 1: collect all runs of pixels above threshold
+    # Pass 1: extract contiguous active-column runs → tile segments
     # -----------------------------------------------------------------------
-    segments: list[tuple[int, int]] = []   # (left, right) inclusive
+    segments: list[tuple[int, int]] = []
     in_seg = False
     seg_start = 0
-    for x, dist in enumerate(scores):
-        if not in_seg and dist >= threshold:
+    for x, a in enumerate(active):
+        if not in_seg and a:
             in_seg = True
             seg_start = x
-        elif in_seg and dist < threshold:
+        elif in_seg and not a:
             in_seg = False
             segments.append((seg_start, x - 1))
     if in_seg:
         segments.append((seg_start, image.width - 1))
 
-    # Wide segments → genuine filled tiles (played row).
-    #
-    # However, large bold letters can create white stripes through the
-    # centre of a tile at the midline (e.g. the crossbar of 'A', counter
-    # of 'B', thin strokes of 'I'/'L'), splitting one tile into several
-    # wide segments separated by narrow intra-tile gaps.
-    #
-    # To distinguish intra-tile gaps (letter strokes) from inter-tile gaps
-    # (background between tiles) we look at the gap distribution and find
-    # a natural break point.  For a standard 5-tile row:
-    #
-    #   - If we have exactly 5 wide segments already → no merge needed.
-    #   - If we have > 5 wide segments → some are split tiles; merge the
-    #     pairs separated by the *smallest* gap class.
-    #
-    # Algorithm:
-    #   1. Collect all gaps between consecutive wide segments.
-    #   2. Find the median gap (this is the inter-tile gap).
-    #   3. Merge any pair of adjacent segments whose gap is strictly less
-    #      than the median, repeating until stable.
     wide = [(l, r) for l, r in segments if r - l + 1 >= min_tile_width]
     if wide:
-        # Iteratively merge split-tile sub-segments caused by letter strokes.
-        #
-        # Large bold white letters on a coloured tile create white stripes at
-        # the scan midline (e.g. the counter of 'A', 'B', 'R'; crossbars of
-        # 'H'; thin strokes of 'I', 'L'; serifs of 'T').  These split one tile
-        # into multiple wide segments separated by gaps that are NOT the regular
-        # inter-tile gap.
-        #
-        # Key observation: the inter-tile gap (background between adjacent
-        # tiles) appears *multiple times* and is the most frequent gap value
-        # in the row.  Intra-tile letter gaps are rarer (at most 2–3 per tile)
-        # and are either smaller or larger than the inter-tile gap.
-        #
-        # Algorithm (repeated until stable or ≤5 segments):
-        #   1. Compute all gaps between adjacent wide segments.
-        #   2. Find the *mode* (most common) gap — this is the inter-tile gap.
-        #   3. Merge pairs whose gap is NOT the mode (these are intra-tile).
-        for _ in range(20):
-            if len(wide) <= 5:
-                break
-            gaps = [wide[i + 1][0] - wide[i][1] - 1 for i in range(len(wide) - 1)]
-            if not gaps:
-                break
-            # Find mode gap (most frequently occurring inter-tile gap)
-            from collections import Counter
-            mode_gap = Counter(gaps).most_common(1)[0][0]
-            # Merge any pair whose gap differs from the mode
-            merged: list[tuple[int, int]] = []
-            i = 0
-            did_merge = False
-            while i < len(wide):
-                if i + 1 < len(wide):
-                    g = wide[i + 1][0] - wide[i][1] - 1
-                    if g != mode_gap:
-                        merged.append((wide[i][0], wide[i + 1][1]))
-                        i += 2
-                        did_merge = True
-                        continue
-                merged.append(wide[i])
-                i += 1
-            wide = merged
-            if not did_merge:
-                break
         return wide
 
     # -----------------------------------------------------------------------
     # Pass 2: border reconstruction for empty light-mode rows.
     #
-    # Each empty tile has a left border (1–4 px) and a right border (1–4 px)
-    # separated by a white interior.  Consecutive tiles share a gap between
-    # the right border of tile N and the left border of tile N+1.
-    #
-    # Algorithm:
-    #   a) Pair each segment with the *next* segment.  If the gap between them
-    #      is ≤ max_interior (tile interior + inter-tile gap, estimated from
-    #      image width and the number of expected tiles), treat them as the
-    #      left and right borders of one tile.
-    #   b) If they are far apart (> max_interior), the second segment is
-    #      actually the *left* border of the next tile — start a new tile.
+    # Empty tiles have only thin (1–4 px) border pixels that differ from the
+    # white background; the interior is white.  The multi-row vote profile
+    # will show narrow spikes at each border edge.  We pair consecutive
+    # left-border and right-border spikes to reconstruct full tile spans.
     # -----------------------------------------------------------------------
     if segments:
-        # Estimate a reasonable max interior width: use half the image width
-        # as a very generous upper bound so we never miss real border pairs.
         max_interior = image.width // 2
-
         reconstructed: list[tuple[int, int]] = []
         i = 0
         while i < len(segments):
             left_seg = segments[i]
             if i + 1 < len(segments):
                 right_seg = segments[i + 1]
-                gap = right_seg[0] - left_seg[1] - 1  # pixels between the two segs
+                gap = right_seg[0] - left_seg[1] - 1
                 if gap <= max_interior:
-                    # Pair them: tile spans from start of left border to end of right border
                     reconstructed.append((left_seg[0], right_seg[1]))
                     i += 2
                     continue
-            # Unpaired segment: treat as a degenerate single-border tile edge,
-            # skip it so we don't produce a spurious 1-px wide tile.
             i += 1
 
-        # Only return reconstructed if all tiles look wide enough
         valid_reconstructed = [
             (l, r) for l, r in reconstructed if r - l + 1 >= min_tile_width
         ]
