@@ -458,7 +458,46 @@ def _find_tile_cols(
         segments.append((seg_start, image.width - 1))
 
     wide = [(l, r) for l, r in segments if r - l + 1 >= min_tile_width]
-    if wide:
+
+    # If we have the right number of tiles, return immediately.
+    # If not (e.g. JPEG blur merges two adjacent tiles into one wide segment),
+    # do NOT return yet — fall through to try the reference layout instead.
+    expected = len(reference_cols) if reference_cols else None
+    if wide and (expected is None or len(wide) == expected):
+        return wide
+
+    # -----------------------------------------------------------------------
+    # Pass 1b: try splitting any over-wide segment using reference tile widths.
+    #
+    # This handles the case where two adjacent same-coloured tiles (e.g. two
+    # green tiles side by side) get merged by JPEG compression into one wide
+    # active run.  If we have a reference column layout we can check each
+    # segment: if it is roughly twice the expected tile width, split it at
+    # the midpoint.  We keep the result only if it yields the right count.
+    # -----------------------------------------------------------------------
+    if wide and reference_cols and len(wide) != expected:
+        ref_widths = [r - l + 1 for l, r in reference_cols]
+        avg_ref_w = sum(ref_widths) / len(ref_widths) if ref_widths else min_tile_width
+        split_result: list[tuple[int, int]] = []
+        for l, r in wide:
+            w = r - l + 1
+            # How many tiles does this segment span (rounded)?
+            n_tiles = max(1, round(w / avg_ref_w))
+            if n_tiles > 1:
+                # Split evenly into n_tiles sub-segments
+                sub_w = w // n_tiles
+                for k in range(n_tiles):
+                    sl = l + k * sub_w
+                    sr = l + (k + 1) * sub_w - 1 if k < n_tiles - 1 else r
+                    split_result.append((sl, sr))
+            else:
+                split_result.append((l, r))
+        if len(split_result) == expected:
+            return split_result
+
+    # If we still have the wrong count but have ANY wide segments, fall
+    # through to the reference fallback below rather than returning bad data.
+    if wide and (expected is None):
         return wide
 
     # -----------------------------------------------------------------------
