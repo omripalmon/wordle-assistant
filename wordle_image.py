@@ -330,18 +330,28 @@ def _find_tile_rows(
     rows.sort()
 
     # --- Filter: keep only rows that are inside the visible grid ---
-    # A row belongs to the grid if its centre column has ANY pixel that
+    # A row belongs to the grid if at least one pixel along its midline
     # differs from background (played fill, border, or letter ink).
+    #
+    # We scan the *full width* of the midline rather than only the centre
+    # column, because on light-mode screenshots the centre column can fall
+    # in a gap between tiles (all white) even though the tile borders are
+    # clearly visible just a few pixels to either side.
     bg = _background_color(image)
-    cx = image.width // 2
     valid: list[tuple[int, int]] = []
     for top, bottom in rows:
         mid_y = (top + bottom) // 2
-        if 0 <= mid_y < image.height:
-            dist = _color_distance(image.getpixel((cx, mid_y))[:3], bg)
-            # Accept if there is *any* deviation from background (even a border)
-            if dist >= 5:
-                valid.append((top, bottom))
+        if not (0 <= mid_y < image.height):
+            continue
+        # Sample evenly across the full width; accept the row as soon as any
+        # pixel clearly differs from background (dist ≥ 5 catches thin borders).
+        step = max(1, image.width // 100)
+        in_grid = any(
+            _color_distance(image.getpixel((x, mid_y))[:3], bg) >= 5
+            for x in range(0, image.width, step)
+        )
+        if in_grid:
+            valid.append((top, bottom))
 
     return valid
 
