@@ -616,8 +616,39 @@ def _ocr_tile_letter(
     #    which is the orientation Tesseract expects.
     inverted = ImageOps.invert(grey)
 
+    # 4b. Binarise with Otsu's method so the image is pure black/white.
+    #     The contrast-stretched inverted image has a grey background (~200–230)
+    #     and a near-black letter (~0–40). A simple fixed threshold of 128
+    #     works well here and avoids Tesseract misreading E as I due to the
+    #     grey midtone background confusing the anti-aliased letter edges.
+    inv_pixels = list(inverted.getdata())
+    # Compute Otsu threshold over the pixel histogram
+    hist = [0] * 256
+    for p in inv_pixels:
+        hist[p] += 1
+    total = len(inv_pixels)
+    sum_all = sum(i * hist[i] for i in range(256))
+    sum_bg = wb = 0
+    otsu_thresh = 128  # sensible default
+    max_var = 0.0
+    for t in range(256):
+        wb += hist[t]
+        if wb == 0:
+            continue
+        wf = total - wb
+        if wf == 0:
+            break
+        sum_bg += t * hist[t]
+        mb = sum_bg / wb
+        mf = (sum_all - sum_bg) / wf
+        var = wb * wf * (mb - mf) ** 2
+        if var > max_var:
+            max_var = var
+            otsu_thresh = t
+    binarised = inverted.point(lambda p: 0 if p < otsu_thresh else 255)
+
     # 5. Sharpen
-    sharpened = inverted.filter(ImageFilter.SHARPEN)
+    sharpened = binarised.filter(ImageFilter.SHARPEN)
 
     # 5b. Add a white border (padding) around the image.
     #     Tesseract performs poorly when glyphs touch the image edge; a small

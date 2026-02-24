@@ -195,6 +195,29 @@ async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
                     if hi > lo:
                         grey = grey.point(lambda p: int((p - lo) * 255 / (hi - lo)))
                     inv = ImageOps.invert(grey)
+                    # Otsu binarisation — makes letter pure black on pure white
+                    inv_pixels = list(inv.getdata())
+                    hist = [0] * 256
+                    for p in inv_pixels:
+                        hist[p] += 1
+                    total_px = len(inv_pixels)
+                    sum_all = sum(i * hist[i] for i in range(256))
+                    sum_bg = wb = 0
+                    otsu_t = 128
+                    max_var = 0.0
+                    for t in range(256):
+                        wb += hist[t]
+                        if wb == 0: continue
+                        wf = total_px - wb
+                        if wf == 0: break
+                        sum_bg += t * hist[t]
+                        mb = sum_bg / wb
+                        mf = (sum_all - sum_bg) / wf
+                        var = wb * wf * (mb - mf) ** 2
+                        if var > max_var:
+                            max_var = var
+                            otsu_t = t
+                    inv = inv.point(lambda p: 0 if p < otsu_t else 255)
                     sharp = inv.filter(ImageFilter.SHARPEN)
                     pad = max(8, sharp.width // 8)
                     padded = PILImage.new("L", (sharp.width + 2*pad, sharp.height + 2*pad), 255)
