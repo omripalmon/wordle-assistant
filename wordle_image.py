@@ -227,10 +227,20 @@ def _find_played_bands(
     bg = _background_color(image)
     scores = [_row_tile_score(image, y, bg) for y in range(image.height)]
 
-    # Threshold: >40 % of the row's pixels must differ from background.
-    # Empty tiles in dark-mode score ~2-5 % (only border pixels), so they
-    # fall comfortably below this line.
-    threshold = 0.40
+    # Threshold: >15 % of the row's pixels must differ from background.
+    #
+    # We use 15 % (not a higher value like 40 %) because on mobile screenshots
+    # the Wordle grid can be a relatively narrow band in the centre of a full-
+    # width image (e.g. 330 px of grid in a 1170 px wide screenshot = 28 %).
+    # In dark mode the tile fill (grey ≈ (58,58,60) on bg ≈ (18,18,19)) gives a
+    # colour-distance of ~70 — well above min_dist=30 — but only over the tile
+    # fraction of the row.  A purely-grey row like "HEDER" (all absent tiles)
+    # may therefore score ~28 %, which is above 15 % but below the old 40 %.
+    #
+    # Empty tiles in dark mode have only a very thin (~1-2 px) dark border whose
+    # colour is barely different from the background; they score < 5 %, safely
+    # below this threshold.
+    threshold = 0.15
     bands: list[tuple[int, int]] = []
     in_band = False
     start = 0
