@@ -619,6 +619,14 @@ def _ocr_tile_letter(
     # 5. Sharpen
     sharpened = inverted.filter(ImageFilter.SHARPEN)
 
+    # 5b. Add a white border (padding) around the image.
+    #     Tesseract performs poorly when glyphs touch the image edge; a small
+    #     margin of background colour gives it room to find the character.
+    pad = max(8, sharpened.width // 8)
+    padded = Image.new("L", (sharpened.width + 2 * pad, sharpened.height + 2 * pad), 255)
+    padded.paste(sharpened, (pad, pad))
+    sharpened = padded
+
     # Mapping of visually-similar non-alpha characters that Tesseract sometimes
     # produces instead of the correct letter (especially for thin glyphs like 'I').
     _SIMILAR: dict[str, str] = {
