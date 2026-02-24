@@ -731,18 +731,62 @@ def _ocr_tile_letter(
                 return ch.upper()
         return ""
 
-    # 6. Tesseract — three-stage strategy:
-    #    a) Single-character mode (psm 10) with A-Z whitelist — most precise.
-    #    b) Single-word mode (psm 8) with A-Z whitelist — tolerates wider glyphs.
-    #    c) Single-character mode (psm 10) without whitelist, then apply
-    #       visually-similar substitutions — catches 'I' which Tesseract reads
-    #       as lowercase 'l' when a strict A-Z whitelist prevents any output.
+    # 5c. Shape-based 'I' detector.
+    #
+    # The Wordle sans-serif 'I' is a plain vertical bar with no serifs.
+    # Tesseract frequently fails or returns '?' for it because the glyph is
+    # ambiguous with 'l', '1', and '|'.  Rather than relying on OCR alone,
+    # we detect 'I' by shape: count the black pixels in each column of the
+    # binarised image.  If there is exactly ONE contiguous group of columns
+    # that contains many black pixels (letter ink), and that group is narrow
+    # relative to the image width (< 30 %), the letter is almost certainly 'I'.
+    bw_pixels = list(sharpened.getdata())
+    bw_w, bw_h = sharpened.width, sharpened.height
+    col_black = [0] * bw_w
+    for idx, p in enumerate(bw_pixels):
+        if p < 128:
+            col_black[idx % bw_w] += 1
+    # Columns with > 5 % of rows filled = part of a stroke
+    min_stroke = max(1, bw_h // 20)
+    stroke_cols = [x for x, c in enumerate(col_black) if c >= min_stroke]
+    if stroke_cols:
+        groups: list[tuple[int, int]] = []
+        g_start = stroke_cols[0]
+        g_prev  = stroke_cols[0]
+        for x in stroke_cols[1:]:
+            if x - g_prev > 3:
+                groups.append((g_start, g_prev))
+                g_start = x
+            g_prev = x
+        groups.append((g_start, g_prev))
+        # Single narrow group centred in the image → 'I'
+        if len(groups) == 1:
+            g_l, g_r = groups[0]
+            g_w = g_r - g_l + 1
+            centre_x = (g_l + g_r) / 2
+            img_centre = bw_w / 2
+            # Use a tight threshold: I has ~8% stroke width; the next narrowest
+            # letter (E/L) is ~24%.  15% safely separates them.
+            if g_w < bw_w * 0.15 and abs(centre_x - img_centre) < bw_w * 0.20:
+                return "I"
+
+    # 6. Tesseract — multi-stage strategy, most-specific first:
+    #    Stages (a)-(b): whitelist A-Z, psm 10 then 8. Catches most letters.
+    #    Stages (c)-(d): no whitelist, psm 10 then 8. _extract_letter maps
+    #       'l'/'1'/'|' → 'I' so sans-serif I is caught even when the whitelist
+    #       blocks all output.
+    #    Stages (e)-(f): extend the whitelist to include common look-alike
+    #       digits/punctuation so Tesseract is not forced to output nothing.
+    #       This is the last resort for very thin glyphs (I, l, 1).
     whitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    extended  = whitelist + "l1|!"   # let Tesseract emit look-alikes for I
     for config in (
         f"--psm 10 -c tessedit_char_whitelist={whitelist}",
         f"--psm 8  -c tessedit_char_whitelist={whitelist}",
-        "--psm 10",   # no whitelist — use similarity map as fallback
-        "--psm 8",    # no whitelist — last resort
+        "--psm 10",                                          # no whitelist
+        "--psm 8",                                           # no whitelist
+        f"--psm 10 -c tessedit_char_whitelist={extended}",  # extended whitelist
+        f"--psm 7  -c tessedit_char_whitelist={extended}",  # single-line mode
     ):
         try:
             raw = pytesseract.image_to_string(sharpened, config=config).strip()
