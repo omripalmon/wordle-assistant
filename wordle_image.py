@@ -365,9 +365,23 @@ def _find_tile_cols(
 ) -> list[tuple[int, int]]:
     """Detect tile columns within a tile row band.
 
-    For played rows the columns are found from the colour-distance profile.
-    For empty rows (where the fill matches the background), ``reference_cols``
-    from a played row is used directly so column positions are still known.
+    Strategy (three-pass):
+
+    1. **Solid-fill pass** — scan the midline of the band for contiguous runs
+       of pixels that clearly differ from the background (threshold 15).  Any
+       run that is at least ``min_tile_width`` pixels wide is recorded as a
+       tile column.  This works for played rows whose tiles are coloured/grey.
+
+    2. **Border-reconstruction pass** — when pass 1 finds no wide segments
+       (e.g. a light-mode empty row where only thin 1–4 px borders differ from
+       the white background), collect all narrow segments and pair consecutive
+       ones that are separated by a gap consistent with being the left- and
+       right-border of the same tile.  The reconstructed tile span runs from
+       the left edge of the left border to the right edge of the right border.
+       This handles both clean 2 px PNG borders and JPEG-blurred edges.
+
+    3. **Reference fallback** — if both passes fail (e.g. a row whose entire
+       midline is pure background), return ``reference_cols`` unchanged.
 
     Args:
         image: PIL Image in RGB mode.
@@ -388,26 +402,78 @@ def _find_tile_cols(
         for x in range(image.width)
     ]
 
-    threshold = 15.0  # Lowered from 30 to catch thin borders in dark mode
-    cols: list[tuple[int, int]] = []
-    in_tile = False
-    start = 0
+    threshold = 15.0  # catches thin borders and filled tiles alike
+    # -----------------------------------------------------------------------
+    # Pass 1: collect all runs of pixels above threshold
+    # -----------------------------------------------------------------------
+    segments: list[tuple[int, int]] = []   # (left, right) inclusive
+    in_seg = False
+    seg_start = 0
     for x, dist in enumerate(scores):
-        if not in_tile and dist >= threshold:
-            in_tile = True
-            start = x
-        elif in_tile and dist < threshold:
-            in_tile = False
-            if x - start >= min_tile_width:
-                cols.append((start, x - 1))
-    if in_tile and image.width - start >= min_tile_width:
-        cols.append((start, image.width - 1))
+        if not in_seg and dist >= threshold:
+            in_seg = True
+            seg_start = x
+        elif in_seg and dist < threshold:
+            in_seg = False
+            segments.append((seg_start, x - 1))
+    if in_seg:
+        segments.append((seg_start, image.width - 1))
 
-    # If detection failed (e.g. empty row in dark mode) fall back to reference
-    if not cols and reference_cols:
+    # Wide segments → genuine filled tiles (played row)
+    cols = [(l, r) for l, r in segments if r - l + 1 >= min_tile_width]
+    if cols:
+        return cols
+
+    # -----------------------------------------------------------------------
+    # Pass 2: border reconstruction for empty light-mode rows.
+    #
+    # Each empty tile has a left border (1–4 px) and a right border (1–4 px)
+    # separated by a white interior.  Consecutive tiles share a gap between
+    # the right border of tile N and the left border of tile N+1.
+    #
+    # Algorithm:
+    #   a) Pair each segment with the *next* segment.  If the gap between them
+    #      is ≤ max_interior (tile interior + inter-tile gap, estimated from
+    #      image width and the number of expected tiles), treat them as the
+    #      left and right borders of one tile.
+    #   b) If they are far apart (> max_interior), the second segment is
+    #      actually the *left* border of the next tile — start a new tile.
+    # -----------------------------------------------------------------------
+    if segments:
+        # Estimate a reasonable max interior width: use half the image width
+        # as a very generous upper bound so we never miss real border pairs.
+        max_interior = image.width // 2
+
+        reconstructed: list[tuple[int, int]] = []
+        i = 0
+        while i < len(segments):
+            left_seg = segments[i]
+            if i + 1 < len(segments):
+                right_seg = segments[i + 1]
+                gap = right_seg[0] - left_seg[1] - 1  # pixels between the two segs
+                if gap <= max_interior:
+                    # Pair them: tile spans from start of left border to end of right border
+                    reconstructed.append((left_seg[0], right_seg[1]))
+                    i += 2
+                    continue
+            # Unpaired segment: treat as a degenerate single-border tile edge,
+            # skip it so we don't produce a spurious 1-px wide tile.
+            i += 1
+
+        # Only return reconstructed if all tiles look wide enough
+        valid_reconstructed = [
+            (l, r) for l, r in reconstructed if r - l + 1 >= min_tile_width
+        ]
+        if valid_reconstructed:
+            return valid_reconstructed
+
+    # -----------------------------------------------------------------------
+    # Pass 3: fall back to reference layout (e.g. pure-white midline)
+    # -----------------------------------------------------------------------
+    if reference_cols:
         return reference_cols
 
-    return cols
+    return []
 
 
 def _sample_tile_color(
