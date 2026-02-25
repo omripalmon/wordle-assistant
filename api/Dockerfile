@@ -25,6 +25,12 @@ COPY optimal_guess.py  ./optimal_guess.py
 COPY main.py           ./main.py
 COPY wordlist.txt      ./wordlist.txt
 
+# Test suite and fixtures
+COPY conftest.py           ./conftest.py
+COPY test_wordle_image.py  ./test_wordle_image.py
+COPY test_analyze_api.py   ./test_analyze_api.py
+COPY tests/                ./tests/
+
 # API package (copied last — only invalidates cache on API changes)
 COPY api/main.py       ./api/main.py
 
