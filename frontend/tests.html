@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wordle Helper — Regression Tests</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: #121213;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    /* ── Header ── */
+    header { text-align: center; margin-bottom: 2rem; }
+    h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .subtitle { color: #818384; font-size: 0.85rem; }
+    .back-link { display: inline-block; margin-top: 0.5rem; font-size: 0.78rem; color: #818384; text-decoration: none; }
+    .back-link:hover { color: #fff; }
+
+    /* ── Suite tabs ── */
+    .suite-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .tab {
+      background: #1a1a1b;
+      border: 1px solid #3a3a3c;
+      border-radius: 8px;
+      color: #818384;
+      cursor: pointer;
+      font-size: 0.83rem;
+      padding: 0.45rem 1rem;
+      transition: all 0.15s;
+    }
+    .tab:hover { border-color: #538d4e; color: #fff; }
+    .tab.active { background: #538d4e; border-color: #538d4e; color: #fff; font-weight: 600; }
+    .tab .warn { color: #b59f3b; font-size: 0.72rem; margin-left: 0.3rem; }
+    .tab.active .warn { color: #ffe08a; }
+
+    /* ── Run button ── */
+    #run-btn {
+      background: #538d4e;
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 0.7rem 2.2rem;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    #run-btn:hover:not(:disabled) { background: #6aad65; }
+    #run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Timer / status ── */
+    #status-bar {
+      margin-top: 1.2rem;
+      font-size: 0.85rem;
+      color: #818384;
+      min-height: 1.2rem;
+      text-align: center;
+    }
+    #timer { font-variant-numeric: tabular-nums; }
+
+    /* ── Spinner ── */
+    .spinner-ring {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #3a3a3c;
+      border-top-color: #538d4e;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Summary badges ── */
+    #summary {
+      display: none;
+      gap: 0.6rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .badge {
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.4rem 0.9rem;
+      letter-spacing: 0.04em;
+    }
+    .badge-passed  { background: rgba(83,141,78,0.2);  color: #6aad65; border: 1px solid #538d4e; }
+    .badge-failed  { background: rgba(185,28,28,0.2);  color: #f87171; border: 1px solid #7f1d1d; }
+    .badge-xfailed { background: rgba(181,159,59,0.2); color: #d4b14a; border: 1px solid #b59f3b; }
+    .badge-skipped { background: rgba(58,58,60,0.4);   color: #818384; border: 1px solid #3a3a3c; }
+    .badge-time    { background: transparent; color: #818384; border: 1px solid #3a3a3c; }
+
+    /* ── Results table ── */
+    #results-wrap {
+      display: none;
+      width: min(780px, 100%);
+      margin-top: 1.8rem;
+    }
+    .file-group { margin-bottom: 1.8rem; }
+    .file-header {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #818384;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #2a2a2c;
+      margin-bottom: 0.2rem;
+    }
+    .test-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+      padding: 0.38rem 0.2rem;
+      border-bottom: 1px solid #1e1e1f;
+      font-size: 0.82rem;
+    }
+    .test-row:last-child { border-bottom: none; }
+    .outcome-icon {
+      flex-shrink: 0;
+      width: 18px;
+      text-align: center;
+      font-size: 0.85rem;
+      margin-top: 0.02rem;
+    }
+    .test-name { flex: 1; word-break: break-all; color: #d7dadc; }
+    .test-name .param { color: #818384; }
+    .test-msg {
+      width: 100%;
+      margin-top: 0.2rem;
+      margin-left: 1.6rem;
+      font-size: 0.75rem;
+      color: #f87171;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .outcome-passed  .test-name { color: #d7dadc; }
+    .outcome-failed  .test-name { color: #f87171; }
+    .outcome-xfailed .test-name { color: #d4b14a; }
+    .outcome-skipped .test-name { color: #818384; }
+
+    /* ── Raw output ── */
+    #raw-wrap { display: none; width: min(780px,100%); margin-top: 1rem; }
+    #raw-toggle {
+      background: none;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      color: #818384;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.3rem 0.7rem;
+      margin-bottom: 0.5rem;
+    }
+    #raw-toggle:hover { color: #fff; border-color: #fff; }
+    #raw-out {
+      display: none;
+      background: #0d0d0e;
+      border: 1px solid #2a2a2c;
+      border-radius: 8px;
+      color: #818384;
+      font-family: monospace;
+      font-size: 0.72rem;
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 0.8rem 1rem;
+      white-space: pre;
+    }
+
+    /* ── Error box ── */
+    #error-box {
+      display: none;
+      margin-top: 1.5rem;
+      background: #2c0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      width: min(600px, 100%);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Wordle Helper</h1>
+    <p class="subtitle">Regression Test Suite</p>
+    <a class="back-link" href="index.html">← back to helper</a>
+  </header>
+
+  <!-- Suite selector -->
+  <div class="suite-tabs">
+    <button class="tab active" data-suite="image">Image Tests</button>
+    <button class="tab" data-suite="api">API Tests <span class="warn">~20 min</span></button>
+    <button class="tab" data-suite="all">All Tests <span class="warn">~20 min</span></button>
+  </div>
+
+  <button id="run-btn">▶ Run Tests</button>
+
+  <div id="status-bar"></div>
+  <div id="error-box"></div>
+
+  <!-- Summary badges -->
+  <div id="summary"></div>
+
+  <!-- Per-test results -->
+  <div id="results-wrap"></div>
+
+  <!-- Raw output -->
+  <div id="raw-wrap">
+    <button id="raw-toggle">Show raw output</button>
+    <pre id="raw-out"></pre>
+  </div>
+
+  <script>
+    const API_URL = "https://wordle-assistant-production-6f2c.up.railway.app";
+
+    const runBtn      = document.getElementById("run-btn");
+    const statusBar   = document.getElementById("status-bar");
+    const errorBox    = document.getElementById("error-box");
+    const summaryEl   = document.getElementById("summary");
+    const resultsWrap = document.getElementById("results-wrap");
+    const rawWrap     = document.getElementById("raw-wrap");
+    const rawToggle   = document.getElementById("raw-toggle");
+    const rawOut      = document.getElementById("raw-out");
+
+    // ── Suite selection ────────────────────────────────────────────────────────
+    let currentSuite = "image";
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentSuite = btn.dataset.suite;
+      });
+    });
+
+    // ── Raw output toggle ──────────────────────────────────────────────────────
+    rawToggle.addEventListener("click", () => {
+      const shown = rawOut.style.display === "block";
+      rawOut.style.display = shown ? "none" : "block";
+      rawToggle.textContent = shown ? "Show raw output" : "Hide raw output";
+    });
+
+    // ── Timer ──────────────────────────────────────────────────────────────────
+    let timerInterval = null;
+    let timerSecs = 0;
+
+    function startTimer() {
+      timerSecs = 0;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        timerSecs++;
+        const m = String(Math.floor(timerSecs / 60)).padStart(2, "0");
+        const s = String(timerSecs % 60).padStart(2, "0");
+        setStatus(`<span class="spinner-ring"></span> Running… <span id="timer">${m}:${s}</span>`);
+      }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    function setStatus(html) {
+      statusBar.innerHTML = html;
+    }
+
+    // ── Run ────────────────────────────────────────────────────────────────────
+    runBtn.addEventListener("click", runTests);
+
+    async function runTests() {
+      // Reset UI
+      runBtn.disabled = true;
+      errorBox.style.display   = "none";
+      summaryEl.style.display  = "none";
+      resultsWrap.style.display = "none";
+      rawWrap.style.display    = "none";
+      rawOut.style.display     = "none";
+      rawToggle.textContent    = "Show raw output";
+
+      startTimer();
+      setStatus(`<span class="spinner-ring"></span> Running ${currentSuite} tests…`);
+
+      try {
+        const resp = await fetch(`${API_URL}/tests/run?suite=${currentSuite}`, {
+          method: "GET",
+        });
+        if (!resp.ok) {
+          const j = await resp.json().catch(() => ({ detail: resp.statusText }));
+          throw new Error(j.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        stopTimer();
+        renderResults(data);
+      } catch (err) {
+        stopTimer();
+        setStatus("");
+        errorBox.textContent  = `⚠ ${err.message}`;
+        errorBox.style.display = "block";
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    // ── Render ─────────────────────────────────────────────────────────────────
+    const ICONS = {
+      passed:  "✓",
+      failed:  "✗",
+      xfailed: "~",
+      xpassed: "!",
+      skipped: "–",
+      error:   "✗",
+    };
+
+    function fmtDuration(secs) {
+      if (secs >= 60) {
+        const m = Math.floor(secs / 60);
+        const s = Math.round(secs % 60);
+        return `${m}m ${s}s`;
+      }
+      return `${secs.toFixed(1)}s`;
+    }
+
+    function splitName(name) {
+      // Split "test_foo[param]" into base + param for styling
+      const bracket = name.indexOf("[");
+      if (bracket === -1) return { base: name, param: "" };
+      return { base: name.slice(0, bracket), param: name.slice(bracket) };
+    }
+
+    function renderResults(data) {
+      // Status line
+      const allGood = data.failed === 0 && data.error === 0;
+      const icon    = allGood ? "✓" : "✗";
+      const color   = allGood ? "#6aad65" : "#f87171";
+      setStatus(`<span style="color:${color}">${icon}</span>&nbsp; Finished in ${fmtDuration(data.duration)}`);
+
+      // Summary badges
+      summaryEl.innerHTML = "";
+      const badges = [
+        { key: "passed",  label: "passed",  cls: "badge-passed"  },
+        { key: "failed",  label: "failed",  cls: "badge-failed"  },
+        { key: "xfailed", label: "xfailed", cls: "badge-xfailed" },
+        { key: "skipped", label: "skipped", cls: "badge-skipped" },
+      ];
+      badges.forEach(({ key, label, cls }) => {
+        const n = data[key] || 0;
+        if (n === 0 && key === "skipped") return;
+        const b = document.createElement("span");
+        b.className = `badge ${cls}`;
+        b.textContent = `${n} ${label}`;
+        summaryEl.appendChild(b);
+      });
+      const timeB = document.createElement("span");
+      timeB.className = "badge badge-time";
+      timeB.textContent = fmtDuration(data.duration);
+      summaryEl.appendChild(timeB);
+      summaryEl.style.display = "flex";
+
+      // Group tests by file
+      const byFile = {};
+      for (const t of (data.tests || [])) {
+        (byFile[t.file] = byFile[t.file] || []).push(t);
+      }
+
+      resultsWrap.innerHTML = "";
+      for (const [file, tests] of Object.entries(byFile)) {
+        const group = document.createElement("div");
+        group.className = "file-group";
+
+        const hdr = document.createElement("div");
+        hdr.className = "file-header";
+        hdr.textContent = file;
+        group.appendChild(hdr);
+
+        for (const t of tests) {
+          const row = document.createElement("div");
+          row.className = `test-row outcome-${t.outcome}`;
+
+          const icon = document.createElement("span");
+          icon.className = "outcome-icon";
+          icon.textContent = ICONS[t.outcome] || "?";
+          row.appendChild(icon);
+
+          const nameWrap = document.createElement("div");
+          nameWrap.style.flex = "1";
+          const { base, param } = splitName(t.name);
+          const nameEl = document.createElement("span");
+          nameEl.className = "test-name";
+          nameEl.innerHTML = `${escHtml(base)}<span class="param">${escHtml(param)}</span>`;
+          nameWrap.appendChild(nameEl);
+
+          if (t.message) {
+            const msg = document.createElement("div");
+            msg.className = "test-msg";
+            msg.textContent = t.message;
+            nameWrap.appendChild(msg);
+          }
+          row.appendChild(nameWrap);
+          group.appendChild(row);
+        }
+        resultsWrap.appendChild(group);
+      }
+      resultsWrap.style.display = "block";
+
+      // Raw output
+      if (data.output_tail) {
+        rawOut.textContent = data.output_tail;
+        rawWrap.style.display = "block";
+      }
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
+
+</body>
+</html>

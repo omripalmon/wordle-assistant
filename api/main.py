@@ -16,10 +16,14 @@ Run locally (from the repo root):
 """
 from __future__ import annotations
 
+import asyncio
 import math
 import os
+import re
+import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -256,6 +260,128 @@ async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
     finally:
         if tmp_path:
             Path(tmp_path).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Regression-test runner
+# ---------------------------------------------------------------------------
+
+_SUITE_FILES: dict[str, list[str]] = {
+    "image": ["test_wordle_image.py"],
+    "api":   ["test_analyze_api.py"],
+    "all":   ["test_wordle_image.py", "test_analyze_api.py"],
+}
+
+
+def _parse_pytest_output(stdout: str, elapsed: float, suite: str) -> dict[str, Any]:
+    """Parse ``pytest -v --tb=line`` output into structured JSON."""
+    tests: list[dict[str, Any]] = []
+
+    # Per-test result lines:  "path::name OUTCOME   [XX%]"
+    RESULT_RE = re.compile(
+        r"^(\S+::\S+)\s+(PASSED|FAILED|ERROR|XFAIL|XPASS|SKIPPED)\s+\[",
+        re.MULTILINE,
+    )
+    for m in RESULT_RE.finditer(stdout):
+        nodeid  = m.group(1)
+        raw     = m.group(2)
+        outcome = (
+            raw.lower()
+               .replace("xfail", "xfailed")
+               .replace("xpass", "xpassed")
+        )
+        file_part, _, name_part = nodeid.partition("::")
+        tests.append({
+            "id":      nodeid,
+            "file":    file_part,
+            "name":    name_part,
+            "outcome": outcome,
+            "message": "",
+        })
+
+    # --tb=line failure messages: "FAILED path::name - AssertionError: ..."
+    FAIL_RE = re.compile(
+        r"^(?:FAILED|ERROR)\s+(\S+::\S+)\s+-\s+(.+)$", re.MULTILINE
+    )
+    messages = {m.group(1): m.group(2).strip() for m in FAIL_RE.finditer(stdout)}
+    for t in tests:
+        if t["outcome"] in ("failed", "error"):
+            t["message"] = messages.get(t["id"], "")
+
+    counts: dict[str, int] = {
+        k: 0 for k in ("passed", "failed", "xfailed", "xpassed", "skipped", "error")
+    }
+    for t in tests:
+        if t["outcome"] in counts:
+            counts[t["outcome"]] += 1
+
+    return {
+        "suite":      suite,
+        "total":      len(tests),
+        "duration":   elapsed,
+        "tests":      tests,
+        # summary line from pytest (last non-empty line starting with "=")
+        "summary":    next(
+            (ln.strip("= \n") for ln in reversed(stdout.splitlines()) if ln.startswith("=") and "passed" in ln),
+            "",
+        ),
+        **counts,
+    }
+
+
+@app.get("/tests/run")
+async def run_tests(suite: str = "image") -> dict[str, Any]:
+    """Run the regression test suite and return structured results.
+
+    Parameters
+    ----------
+    suite:
+        ``image`` — image-parsing tests only (fast, ~1 min).
+        ``api``   — API tests with entropy scoring (~20 min).
+        ``all``   — both suites.
+    """
+    if suite not in _SUITE_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"suite must be one of: {list(_SUITE_FILES)}",
+        )
+
+    test_paths = [ROOT / f for f in _SUITE_FILES[suite]]
+    missing = [p.name for p in test_paths if not p.exists()]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Test files not found: {missing}. "
+                   "Ensure the repo is deployed with test files present.",
+        )
+
+    fixtures_dir = ROOT / "tests" / "fixtures"
+    if not fixtures_dir.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Test fixtures not found at tests/fixtures/.",
+        )
+
+    def _run() -> dict[str, Any]:
+        t0 = time.monotonic()
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             *[str(p) for p in test_paths],
+             "-v", "--tb=line", "--no-header", "-p", "no:warnings"],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=2700,          # 45-minute hard stop
+        )
+        elapsed = round(time.monotonic() - t0, 2)
+        result  = _parse_pytest_output(proc.stdout, elapsed, suite)
+        result["returncode"] = proc.returncode
+        # Attach tail of raw output so callers can debug unexpected failures
+        combined = proc.stdout + ("\n--- stderr ---\n" + proc.stderr if proc.stderr.strip() else "")
+        result["output_tail"] = combined[-4000:]
+        return result
+
+    return await asyncio.to_thread(_run)
 
 
 # ---------------------------------------------------------------------------
