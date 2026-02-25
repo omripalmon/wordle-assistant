@@ -57,15 +57,40 @@
       object-fit: contain;
       border: 1px solid #3a3a3c;
     }
-    #reselect-btn {
-      display: inline-block;
+    .image-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
       margin-top: 0.6rem;
+      flex-wrap: wrap;
+    }
+    #reselect-btn, #paste-new-btn {
       font-size: 0.8rem;
       color: #818384;
       cursor: pointer;
       text-decoration: underline;
     }
-    #reselect-btn:hover { color: #ffffff; }
+    #reselect-btn:hover, #paste-new-btn:hover { color: #ffffff; }
+    .action-sep { color: #3a3a3c; font-size: 0.8rem; }
+    #paste-new-btn kbd {
+      background: #2a2a2c;
+      border: 1px solid #3a3a3c;
+      border-radius: 3px;
+      padding: 0 3px;
+      font-size: 0.7rem;
+      font-family: inherit;
+      text-decoration: none;
+      display: inline-block;
+    }
+    #paste-toast {
+      font-size: 0.75rem;
+      color: #538d4e;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    #paste-toast.visible { opacity: 1; }
 
     /* ── Spinner ──────────────────────────────────────────────────────────── */
     #spinner {
@@ -245,8 +270,12 @@
   <!-- ── Image preview ────────────────────────────────────────────────────── -->
   <div id="preview-section">
     <img id="preview-img" alt="Wordle screenshot preview" />
-    <br />
-    <span id="reselect-btn">Choose a different image</span>
+    <div class="image-actions">
+      <span id="reselect-btn">Choose a different image</span>
+      <span class="action-sep">·</span>
+      <span id="paste-new-btn">Paste new image <kbd>⌘V</kbd>/<kbd>Ctrl+V</kbd></span>
+    </div>
+    <div id="paste-toast">Ready — press ⌘V or Ctrl+V to paste</div>
   </div>
 
   <!-- ── Spinner ──────────────────────────────────────────────────────────── -->
@@ -335,6 +364,15 @@
       if (e.key === "Enter" || e.key === " ") fileInput.click();
     });
     reselectBtn.addEventListener("click", () => fileInput.click());
+
+    const pasteNewBtn = document.getElementById("paste-new-btn");
+    const pasteToast  = document.getElementById("paste-toast");
+    let pasteToastTimer = null;
+    pasteNewBtn.addEventListener("click", () => {
+      pasteToast.classList.add("visible");
+      clearTimeout(pasteToastTimer);
+      pasteToastTimer = setTimeout(() => pasteToast.classList.remove("visible"), 2500);
+    });
 
     // Drag and drop
     dropzone.addEventListener("dragover", (e) => {
