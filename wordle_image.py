@@ -862,10 +862,7 @@ def parse_wordle_image(
     # --- Detect tile rows ---
     tile_rows = _find_tile_rows(image)
     if not tile_rows:
-        raise ValueError(
-            f"No Wordle grid detected in {path}. "
-            "Ensure the image shows the coloured tile grid clearly."
-        )
+        return []  # empty / unplayed grid — no guesses yet
 
     # --- For each tile row, detect columns, sample colours, and OCR letters ---
     use_ocr = (words is None)
@@ -909,10 +906,7 @@ def parse_wordle_image(
             ocr_words.append(row_word)
 
     if not responses:
-        raise ValueError(
-            f"Detected tile rows but none had exactly {expected_cols} columns. "
-            f"Try passing expected_cols= if the puzzle has a different width."
-        )
+        return []  # all detected rows were empty/unplayed — no guesses yet
 
     # --- Resolve final word list ---
     if words is not None:

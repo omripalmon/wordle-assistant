@@ -315,16 +315,11 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        if not raw_guesses:
-            raise HTTPException(
-                status_code=400,
-                detail="No guesses could be extracted from the image.",
-            )
-
         # Check if OCR produced any real letters — '?' means Tesseract couldn't
         # read the tile.  We still return colour-based results but cannot derive
         # letter constraints from unknown words.
-        ocr_failed = all("?" in word for word, _ in raw_guesses)
+        # Empty guess list (blank grid) is valid — treat as no constraints.
+        ocr_failed = bool(raw_guesses) and all("?" in word for word, _ in raw_guesses)
 
         # ------------------------------------------------------------------
         # 3. Convert (word, response) pairs to Wordle constraints
