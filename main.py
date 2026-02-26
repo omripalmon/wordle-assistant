@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 
-from wordle_filter import filter_words, load_words
+from wordle_filter import filter_words, load_nyt_wordlists, load_words
 
 
 def parse_green(args: list[str]) -> dict[int, str]:
@@ -218,8 +218,12 @@ def main():
         ),
     )
     parser.add_argument(
-        "--wordlist", default="/usr/share/dict/words",
-        help="Path to word list file (default: /usr/share/dict/words)",
+        "--answers", default=None,
+        help="Path to possible answers file (default: bundled wordle-answers.txt)",
+    )
+    parser.add_argument(
+        "--wordlist", default=None,
+        help="Path to a single word list file (legacy; uses it as the answers list)",
     )
     args = parser.parse_args()
 
@@ -238,7 +242,11 @@ def main():
         kp, ep, mn, mx, extra_kp, extra_ep, extra_mn, extra_mx
     )
 
-    words = load_words(args.wordlist)
+    if args.wordlist:
+        words = load_words(args.wordlist)
+    else:
+        answers_list, _ = load_nyt_wordlists(args.answers)
+        words = answers_list
     results = filter_words(
         words,
         known_positions=known_positions or None,

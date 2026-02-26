@@ -18,7 +18,7 @@ import sys
 from collections import Counter
 from multiprocessing import Pool, cpu_count
 
-from wordle_filter import filter_words, load_words
+from wordle_filter import filter_words, load_nyt_wordlists, load_words
 
 # Pattern tile values (base-3 digits)
 GREEN = 2
@@ -102,19 +102,19 @@ def score_guess(guess: str, word_list: list[str]) -> float:
 # Multiprocessing helpers
 # ---------------------------------------------------------------------------
 # Module-level variable set by worker initialiser so each child process holds
-# its own copy of the word list without re-serialising it per task.
-_word_list: list[str] = []
+# its own copy of the answer pool without re-serialising it per task.
+_answer_pool: list[str] = []
 
 
-def _init_worker(word_list: list[str]) -> None:
-    """Initialise the word list in each worker process."""
-    global _word_list
-    _word_list = word_list
+def _init_worker(answer_pool: list[str]) -> None:
+    """Initialise the answer pool in each worker process."""
+    global _answer_pool
+    _answer_pool = answer_pool
 
 
 def _score_word(guess: str) -> tuple[str, float]:
     """Score a single guess word (multiprocessing target)."""
-    return (guess, score_guess(guess, _word_list))
+    return (guess, score_guess(guess, _answer_pool))
 
 
 # ---------------------------------------------------------------------------
@@ -134,48 +134,57 @@ def valid_word_bonus(n: int) -> float:
 
 
 def find_optimal_guesses(
-    word_list: list[str],
+    guess_candidates: list[str],
+    answer_pool: list[str] | None = None,
     top_n: int = 10,
     workers: int | None = None,
-    valid_words: set[str] | None = None,
+    valid_answers: set[str] | None = None,
 ) -> list[tuple[str, float, float]]:
     """Find the guesses with highest entropy (most informative first guesses).
 
     Args:
-        word_list: List of unique 5-letter words to score as candidates.
+        guess_candidates: All words to evaluate as potential guesses.
+        answer_pool: The set of possible answer words used to compute entropy.
+            Each guess is scored by the entropy of its pattern distribution
+            across these words.  If ``None``, defaults to ``guess_candidates``
+            (backward-compatible single-list mode).
         top_n: Number of top results to return.
         workers: Number of parallel processes (default: CPU count).
-        valid_words: Set of words that are valid answers.  Candidates in this
-            set receive a bonus of ``(1/N)*log2(N)`` (where N is the size of
-            the candidate pool) added to their adjusted score used for
-            ranking.  If ``None``, all words are treated as valid.
+        valid_answers: Set of words that are valid answers.  Words in this
+            set receive a bonus of ``(1/N)*log2(N)`` (where N = len(answer_pool))
+            added to their adjusted score.  If ``None``, defaults to
+            ``set(answer_pool)``.
 
     Returns:
         List of (word, raw_entropy, adjusted_entropy) tuples sorted by
         adjusted entropy descending.
     """
+    if answer_pool is None:
+        answer_pool = guess_candidates
+
     if workers is None:
         workers = cpu_count()
 
-    total = len(word_list)
-    if total == 0:
+    n_answers = len(answer_pool)
+    n_guesses = len(guess_candidates)
+    if n_guesses == 0 or n_answers == 0:
         return []
 
-    if valid_words is None:
-        valid_words = set(word_list)
+    if valid_answers is None:
+        valid_answers = set(answer_pool)
 
-    bonus = valid_word_bonus(total)
+    bonus = valid_word_bonus(n_answers)
     scored: list[tuple[str, float, float]] = []
 
-    with Pool(processes=workers, initializer=_init_worker, initargs=(word_list,)) as pool:
-        results = pool.imap_unordered(_score_word, word_list, chunksize=64)
+    with Pool(processes=workers, initializer=_init_worker, initargs=(answer_pool,)) as pool:
+        results = pool.imap_unordered(_score_word, guess_candidates, chunksize=64)
         for i, (word, raw_score) in enumerate(results, 1):
-            word_bonus = bonus if word in valid_words else 0.0
+            word_bonus = bonus if word in valid_answers else 0.0
             scored.append((word, raw_score, raw_score + word_bonus))
-            if i % 500 == 0 or i == total:
+            if i % 500 == 0 or i == n_guesses:
                 print(
-                    f"\r  Progress: {i}/{total} words scored "
-                    f"({100 * i / total:.1f}%)",
+                    f"\r  Progress: {i}/{n_guesses} words scored "
+                    f"({100 * i / n_guesses:.1f}%)",
                     end="",
                     flush=True,
                     file=sys.stderr,
@@ -192,13 +201,14 @@ def best_guess_from_constraints(
     excluded_positions: dict[str, set[int]] | None = None,
     min_occurrences: dict[str, int] | None = None,
     max_occurrences: dict[str, int] | None = None,
-    wordlist: str = "/usr/share/dict/words",
+    answers_path: str | None = None,
+    guesses_path: str | None = None,
 ) -> tuple[str, float] | None:
     """Given Wordle constraints, return the highest-entropy guess from the remaining candidates.
 
-    Filters the word list using the supplied constraints (identical semantics to
-    ``filter_words``), then scores every surviving word by the Shannon entropy of
-    its Wordle feedback pattern distribution against that same candidate set.
+    Filters the possible *answers* using the supplied constraints, then scores
+    every valid guess (answers + allowed guesses) by the Shannon entropy of its
+    Wordle feedback pattern distribution against the filtered answer candidates.
 
     Args:
         known_positions: Green letters — map of position (0-4) to letter.
@@ -209,25 +219,18 @@ def best_guess_from_constraints(
             e.g. ``{'e': 2}`` means 'e' must appear at least twice.
         max_occurrences: Maximum allowed count per letter.
             e.g. ``{'e': 1}`` means 'e' can appear at most once.
-        wordlist: Path to the dictionary file (default: ``/usr/share/dict/words``).
+        answers_path: Path to the answers file (default: bundled wordle-answers.txt).
+        guesses_path: Path to the allowed-guesses file (default: bundled wordle-allowed-guesses.txt).
 
     Returns:
         ``(word, entropy_bits)`` for the best guess, or ``None`` if no words survive
         the constraints.
-
-    Example::
-
-        >>> best_guess_from_constraints(
-        ...     known_positions={2: 'a'},
-        ...     excluded_positions={'r': {0}},
-        ...     min_occurrences={'r': 1},
-        ...     max_occurrences={'e': 1},
-        ... )
-        ('crane', 3.17)   # illustrative — actual value depends on word list
     """
-    all_words = load_words(wordlist)
+    answers, allowed_guesses = load_nyt_wordlists(answers_path, guesses_path)
+    all_guesses = answers + allowed_guesses
+
     candidates = filter_words(
-        all_words,
+        answers,
         known_positions=known_positions,
         excluded_positions=excluded_positions,
         min_occurrences=min_occurrences,
@@ -238,7 +241,7 @@ def best_guess_from_constraints(
         return None
 
     best_word, best_score = max(
-        ((word, score_guess(word, candidates)) for word in candidates),
+        ((word, score_guess(word, candidates)) for word in all_guesses),
         key=lambda t: t[1],
     )
     return best_word, best_score
@@ -263,9 +266,20 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--answers",
+        default=None,
+        help="Path to possible answers file (default: bundled wordle-answers.txt)",
+    )
+    parser.add_argument(
+        "--guesses",
+        default=None,
+        help="Path to allowed guesses file (default: bundled wordle-allowed-guesses.txt)",
+    )
+    parser.add_argument(
         "--wordlist",
-        default="/usr/share/dict/words",
-        help="Path to word list file (default: /usr/share/dict/words)",
+        default=None,
+        help="Path to a single word list file (uses it as both answers and guesses; "
+             "overrides --answers/--guesses)",
     )
     # High-level guess interface
     parser.add_argument(
@@ -361,14 +375,23 @@ def main() -> None:
     max_occurrences = max_occurrences or None
     constrained = any(x is not None for x in (known_positions, excluded_positions, min_occurrences or None, max_occurrences))
 
-    raw_words = load_words(args.wordlist)
+    if args.wordlist:
+        # Legacy single-file mode: use the file as both answers and guesses.
+        raw = load_words(args.wordlist)
+        answers = raw
+        all_guesses = raw
+    else:
+        answers, allowed_guesses = load_nyt_wordlists(args.answers, args.guesses)
+        all_guesses = answers + allowed_guesses
 
     if constrained:
         # ------------------------------------------------------------------ #
-        # Constrained mode: filter first, then find single best guess        #
+        # Constrained mode: filter answers, score all valid guesses          #
         # ------------------------------------------------------------------ #
+        # Only possible answers are listed as candidates; all valid guesses
+        # are scored against those candidates.
         candidates = filter_words(
-            raw_words,
+            answers,
             known_positions=known_positions,
             excluded_positions=excluded_positions,
             min_occurrences=min_occurrences,
@@ -391,7 +414,7 @@ def main() -> None:
         scored = sorted(
             (
                 (word, raw := score_guess(word, candidates), raw + (bonus if word in candidate_set else 0.0))
-                for word in raw_words
+                for word in all_guesses
             ),
             key=lambda t: t[2],
             reverse=True,
@@ -418,62 +441,60 @@ def main() -> None:
                   f"(raw={best_valid[1]:.4f}, adjusted={best_valid[2]:.4f})")
 
         print(f"\nRemaining candidates: {len(candidates)}")
-        print(f"* = guess is not itself a valid candidate under current constraints")
-        print(f"Valid candidates receive a +{bonus:.4f} bit bonus ((1/N)*log2(N), N={len(candidates)}) in adjusted score.")
+        print(f"* = guess is not itself a valid answer candidate")
+        print(f"Valid answer candidates receive a +{bonus:.4f} bit bonus ((1/N)*log2(N), N={len(candidates)}) in adjusted score.")
     else:
         # ------------------------------------------------------------------ #
-        # Unconstrained mode: score all words (original first-guess finder)  #
+        # Unconstrained mode: score all guesses, entropy vs all answers      #
         # ------------------------------------------------------------------ #
-        word_list = sorted(set(raw_words))
-        print(f"Loaded {len(word_list)} unique words.", file=sys.stderr)
+        answers_deduped = sorted(set(answers))
+        all_guesses_deduped = sorted(set(all_guesses))
+        print(f"Answers pool: {len(answers_deduped)} words.", file=sys.stderr)
+        print(f"Guess candidates: {len(all_guesses_deduped)} words.", file=sys.stderr)
 
-        max_entropy = math.log2(len(word_list))
+        max_entropy = math.log2(len(answers_deduped))
         print(f"Maximum possible entropy: {max_entropy:.4f} bits", file=sys.stderr)
         print(
-            f"Scoring all words using {args.workers or cpu_count()} workers...",
+            f"Scoring all {len(all_guesses_deduped)} guess candidates using "
+            f"{args.workers or cpu_count()} workers...",
             file=sys.stderr,
         )
 
-        valid_words_set = set(word_list)
+        answers_set = set(answers_deduped)
         results = find_optimal_guesses(
-            word_list,
+            all_guesses_deduped,
+            answer_pool=answers_deduped,
             top_n=args.top,
             workers=args.workers,
-            valid_words=valid_words_set,
+            valid_answers=answers_set,
         )
 
         print(f"\nTop {len(results)} guesses (highest entropy = most informative):\n")
-        print(f"{'Rank':<6} {'Word':<10} {'Entropy (bits)':<16} {'Adjusted':<16} {'% of max':<12} {'Valid?'}")
+        print(f"{'Rank':<6} {'Word':<10} {'Entropy (bits)':<16} {'Adjusted':<16} {'% of max':<12} {'Answer?'}")
         print("-" * 68)
         for rank, (word, raw_score, adj_score) in enumerate(results, 1):
             pct = 100 * raw_score / max_entropy if max_entropy > 0 else 0
-            valid_mark = "yes" if word in valid_words_set else ""
-            print(f"{rank:<6} {word:<10} {raw_score:<16.4f} {adj_score:<16.4f} {pct:<12.1f} {valid_mark}")
+            answer_mark = "yes" if word in answers_set else ""
+            print(f"{rank:<6} {word:<10} {raw_score:<16.4f} {adj_score:<16.4f} {pct:<12.1f} {answer_mark}")
 
-        # Best overall (by adjusted score) and best valid-word candidate
         best_overall = results[0] if results else None
         best_valid = next(
-            ((w, r, a) for w, r, a in results if w in valid_words_set), None
+            ((w, r, a) for w, r, a in results if w in answers_set), None
         )
-        if best_valid is None:
-            # Not in top_n — search full scored list would require re-running;
-            # in unconstrained mode all words are valid so this won't happen.
-            pass
 
         print()
         if best_overall:
             print(f"Best overall (adjusted score):  {best_overall[0]}  "
                   f"(raw={best_overall[1]:.4f}, adjusted={best_overall[2]:.4f})")
         if best_valid:
-            print(f"Best valid-word candidate:      {best_valid[0]}  "
+            print(f"Best answer-word candidate:     {best_valid[0]}  "
                   f"(raw={best_valid[1]:.4f}, adjusted={best_valid[2]:.4f})")
 
-        n = len(word_list)
+        n = len(answers_deduped)
         bonus_display = valid_word_bonus(n)
         print(
-            f"\nNote: Ranking maximises entropy of the pattern distribution.\n"
-            f"Valid-word candidates receive a +{bonus_display:.4f} bit bonus ((1/N)*log2(N), N={n}) in adjusted score.\n"
-            f"In unconstrained mode all words are valid, so adjusted = raw + bonus."
+            f"\nNote: Entropy computed over {n} possible answers.\n"
+            f"Answer words receive a +{bonus_display:.4f} bit bonus ((1/N)*log2(N), N={n}) in adjusted score."
         )
 
 

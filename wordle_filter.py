@@ -3,6 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+_HERE = Path(__file__).parent
+_NYT_ANSWERS = _HERE / "wordle-answers.txt"
+_NYT_GUESSES = _HERE / "wordle-allowed-guesses.txt"
+
 
 def load_words(path: str = "/usr/share/dict/words") -> list[str]:
     """Load 5-letter lowercase alpha-only words from a dictionary file."""
@@ -12,6 +16,30 @@ def load_words(path: str = "/usr/share/dict/words") -> list[str]:
         for w in text.splitlines()
         if len(w) == 5 and w.isalpha()
     ]
+
+
+def load_nyt_wordlists(
+    answers_path: str | None = None,
+    guesses_path: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """Load the NYT Wordle word lists.
+
+    Returns:
+        ``(answers, allowed_guesses)`` where *answers* are the ~2315 possible
+        answer words and *allowed_guesses* are the ~10 657 additional words
+        that are valid guesses but will never be the answer.
+    """
+    ap = Path(answers_path) if answers_path else _NYT_ANSWERS
+    gp = Path(guesses_path) if guesses_path else _NYT_GUESSES
+
+    def _read(p: Path) -> list[str]:
+        return [
+            w.strip().lower()
+            for w in p.read_text().splitlines()
+            if len(w.strip()) == 5 and w.strip().isalpha()
+        ]
+
+    return _read(ap), _read(gp)
 
 
 def filter_words(
