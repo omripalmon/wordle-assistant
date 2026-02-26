@@ -1,119 +1,119 @@
 {
-  "blank_dark.png": {
-    "guess_count": 0,
-    "responses": [],
-    "words": [],
-    "word_ocr_reliable": [],
-    "candidate_count": 8506,
-    "best_overall_word": "tarie",
-    "best_valid_word": "tarie"
-  },
-  "smelt_v1.png": {
-    "guess_count": 1,
-    "responses": [
-      "bbygg"
-    ],
-    "words": [
-      "smelt"
-    ],
-    "word_ocr_reliable": [
-      false
-    ],
-    "candidate_count": 4,
-    "best_overall_word": "dealt",
-    "best_valid_word": "dealt"
-  },
-  "smelt_v2.png": {
-    "guess_count": 1,
-    "responses": [
-      "bbygg"
-    ],
-    "words": [
-      "smelt"
-    ],
-    "word_ocr_reliable": [
-      false
-    ],
-    "candidate_count": 4,
-    "best_overall_word": "dealt",
-    "best_valid_word": "dealt"
-  },
-  "raise_ybbby_v1.png": {
-    "guess_count": 1,
-    "responses": [
-      "ybbby"
-    ],
-    "words": [
-      "raise"
-    ],
-    "word_ocr_reliable": [
-      true
-    ],
-    "candidate_count": 312,
-    "best_overall_word": "deter",
-    "best_valid_word": "deter"
-  },
-  "raise_ybbby_v2.png": {
-    "guess_count": 1,
-    "responses": [
-      "ybbby"
-    ],
-    "words": [
-      "raise"
-    ],
-    "word_ocr_reliable": [
-      true
-    ],
-    "candidate_count": 312,
-    "best_overall_word": "deter",
-    "best_valid_word": "deter"
-  },
-  "raise_chain.png": {
-    "guess_count": 2,
-    "responses": [
-      "byybb",
-      "ybygb"
-    ],
-    "words": [
-      "raise",
-      "chain"
-    ],
-    "word_ocr_reliable": [
-      true,
-      true
-    ],
-    "candidate_count": 6,
-    "best_overall_word": "alamo",
-    "best_valid_word": "algic"
-  },
-  "raise_bybbb_v1.png": {
-    "guess_count": 1,
-    "responses": [
-      "bybbb"
-    ],
-    "words": [
-      "raise"
-    ],
-    "word_ocr_reliable": [
-      true
-    ],
-    "candidate_count": 530,
-    "best_overall_word": "tolan",
-    "best_valid_word": "tolan"
-  },
-  "raise_bybbb_v2.png": {
-    "guess_count": 1,
-    "responses": [
-      "bybbb"
-    ],
-    "words": [
-      "raise"
-    ],
-    "word_ocr_reliable": [
-      true
-    ],
-    "candidate_count": 530,
-    "best_overall_word": "tolan",
-    "best_valid_word": "tolan"
-  }
+    "blank_dark.png": {
+        "guess_count": 0,
+        "responses": [],
+        "words": [],
+        "word_ocr_reliable": [],
+        "candidate_count": 8506,
+        "best_overall_word": "tarie",
+        "best_valid_word": "tarie"
+    },
+    "smelt_v1.png": {
+        "guess_count": 1,
+        "responses": [
+            "bbygg"
+        ],
+        "words": [
+            "smelt"
+        ],
+        "word_ocr_reliable": [
+            true
+        ],
+        "candidate_count": 4,
+        "best_overall_word": "dealt",
+        "best_valid_word": "dealt"
+    },
+    "smelt_v2.png": {
+        "guess_count": 1,
+        "responses": [
+            "bbygg"
+        ],
+        "words": [
+            "smelt"
+        ],
+        "word_ocr_reliable": [
+            true
+        ],
+        "candidate_count": 4,
+        "best_overall_word": "dealt",
+        "best_valid_word": "dealt"
+    },
+    "raise_ybbby_v1.png": {
+        "guess_count": 1,
+        "responses": [
+            "ybbby"
+        ],
+        "words": [
+            "raise"
+        ],
+        "word_ocr_reliable": [
+            true
+        ],
+        "candidate_count": 312,
+        "best_overall_word": "deter",
+        "best_valid_word": "deter"
+    },
+    "raise_ybbby_v2.png": {
+        "guess_count": 1,
+        "responses": [
+            "ybbby"
+        ],
+        "words": [
+            "raise"
+        ],
+        "word_ocr_reliable": [
+            true
+        ],
+        "candidate_count": 312,
+        "best_overall_word": "deter",
+        "best_valid_word": "deter"
+    },
+    "raise_chain.png": {
+        "guess_count": 2,
+        "responses": [
+            "byybb",
+            "ybygb"
+        ],
+        "words": [
+            "raise",
+            "chain"
+        ],
+        "word_ocr_reliable": [
+            true,
+            true
+        ],
+        "candidate_count": 6,
+        "best_overall_word": "alamo",
+        "best_valid_word": "algic"
+    },
+    "raise_bybbb_v1.png": {
+        "guess_count": 1,
+        "responses": [
+            "bybbb"
+        ],
+        "words": [
+            "raise"
+        ],
+        "word_ocr_reliable": [
+            true
+        ],
+        "candidate_count": 530,
+        "best_overall_word": "tolan",
+        "best_valid_word": "tolan"
+    },
+    "raise_bybbb_v2.png": {
+        "guess_count": 1,
+        "responses": [
+            "bybbb"
+        ],
+        "words": [
+            "raise"
+        ],
+        "word_ocr_reliable": [
+            true
+        ],
+        "candidate_count": 530,
+        "best_overall_word": "tolan",
+        "best_valid_word": "tolan"
+    }
 }

@@ -780,6 +780,7 @@ def _ocr_tile_letter(
     #       This is the last resort for very thin glyphs (I, l, 1).
     whitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     extended  = whitelist + "l1|!"   # let Tesseract emit look-alikes for I
+    tess_letter = ""
     for config in (
         f"--psm 10 -c tessedit_char_whitelist={whitelist}",
         f"--psm 8  -c tessedit_char_whitelist={whitelist}",
@@ -792,10 +793,42 @@ def _ocr_tile_letter(
             raw = pytesseract.image_to_string(sharpened, config=config).strip()
         except Exception:
             continue
-        letter = _extract_letter(raw)
-        if letter:
-            return letter
-    return "?"
+        found = _extract_letter(raw)
+        if found:
+            tess_letter = found
+            break
+
+    # 6b. M ↔ N disambiguation.
+    # Tesseract sometimes misreads the bold Wordle 'M' as 'N'.  The two
+    # letters differ in symmetry: M is left-right symmetric (its centre-of-
+    # mass per row is constant), while N has a diagonal stroke that causes
+    # the per-row CoM to drift linearly from top to bottom.
+    #
+    # We measure the normalised total CoM drift:
+    #   total_drift = |slope| * bw_h / bw_w   (fraction of image width)
+    # Fixture measurements:  M ≈ 0.001,  N ≈ 0.083  →  threshold 0.05 is safe.
+    if tess_letter == "N":
+        row_coms: list[tuple[int, float]] = []
+        for row in range(bw_h):
+            row_px = bw_pixels[row * bw_w : (row + 1) * bw_w]
+            blacks = [x for x, p in enumerate(row_px) if p < 128]
+            if len(blacks) >= 3:
+                row_coms.append((row, sum(blacks) / len(blacks)))
+        if len(row_coms) >= 5:
+            rows_v = [r for r, _ in row_coms]
+            coms_v = [c for _, c in row_coms]
+            n_r = len(rows_v)
+            mr = sum(rows_v) / n_r
+            mc = sum(coms_v) / n_r
+            slope_num = sum((r - mr) * (c - mc) for r, c in zip(rows_v, coms_v))
+            slope_den = sum((r - mr) ** 2 for r in rows_v)
+            if slope_den > 0:
+                slope = slope_num / slope_den
+                total_drift = abs(slope) * bw_h / bw_w
+                if total_drift < 0.05:
+                    tess_letter = "M"
+
+    return tess_letter or "?"
 
 
 # ---------------------------------------------------------------------------

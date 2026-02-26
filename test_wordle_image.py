@@ -146,22 +146,20 @@ def test_i_detection_in_chain_row() -> None:
 
 
 @REQUIRES_TESSERACT
-def test_smelt_m_currently_misread_as_n() -> None:
-    """Documents the known M→N OCR confusion for SMELT.
+def test_smelt_m_read_correctly() -> None:
+    """Regression: bold M in SMELT was misread as N by Tesseract.
 
-    Colour detection is unaffected; only the letter is wrong.
-    When this bug is fixed:
-      1. Update expected.json: set word_ocr_reliable=[True], words=["smelt"]
-      2. Change the assertion below to: assert word == "smelt"
-      3. Remove the xfail from test_ocr_words_known_failures for smelt_v*.
+    Fixed by a shape-based M/N disambiguator that measures the per-row
+    centre-of-mass drift: M is left-right symmetric (drift ≈ 0), while N's
+    diagonal stroke causes a clear linear drift (≥ 0.05 normalised units).
+
+    Commit: fix OCR M→N confusion using centre-of-mass symmetry check.
     """
     result = parse_wordle_image(_fixture("smelt_v1.png"))
     assert len(result) == 1
     word, resp = result[0]
-    assert resp == "bbygg", "Colour codes must stay correct even when OCR is wrong"
-    assert word == "snelt", (
-        "M→N OCR appears fixed — update smelt_v*/expected.json and this assertion!"
-    )
+    assert resp == "bbygg", f"Colour codes changed unexpectedly: '{resp}'"
+    assert word == "smelt", f"Expected 'smelt', got '{word}' — M/N fix may have regressed"
 
 
 @REQUIRES_TESSERACT
