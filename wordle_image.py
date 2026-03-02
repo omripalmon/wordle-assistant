@@ -798,16 +798,27 @@ def _ocr_tile_letter(
             tess_letter = found
             break
 
-    # 6b. M ↔ N disambiguation.
-    # Tesseract sometimes misreads the bold Wordle 'M' as 'N'.  The two
-    # letters differ in symmetry: M is left-right symmetric (its centre-of-
-    # mass per row is constant), while N has a diagonal stroke that causes
-    # the per-row CoM to drift linearly from top to bottom.
+    # 6b. M ↔ N/I disambiguation.
+    # Tesseract sometimes misreads the bold Wordle 'M' as 'N' (older builds)
+    # or as 'I' (observed on Tesseract 5.5.0 in the Railway deployment).
+    # Both confusions are caught by the same centre-of-mass symmetry test:
+    # M is left-right symmetric (per-row CoM is constant), while N has a
+    # diagonal stroke that causes the CoM to drift linearly top-to-bottom.
     #
-    # We measure the normalised total CoM drift:
-    #   total_drift = |slope| * bw_h / bw_w   (fraction of image width)
-    # Fixture measurements:  M ≈ 0.001,  N ≈ 0.083  →  threshold 0.05 is safe.
-    if tess_letter == "N":
+    # For the M→I case we add a stroke-span guard so that a genuine 'I'
+    # (narrow single-column stroke, already handled by the shape detector
+    # above and therefore never reaching this point with wide span) is never
+    # promoted to 'M'.  A true 'I' has stroke_cols spanning < 10 % of the
+    # image width; an 'M' misread as 'I' spans > 30 %.  The 20 % threshold
+    # gives a comfortable safety margin.
+    #
+    # Fixture measurements:  M ≈ 0.001,  N ≈ 0.083  →  threshold 0.05 safe.
+    _m_i_candidate = (
+        tess_letter == "I"
+        and bool(stroke_cols)
+        and (stroke_cols[-1] - stroke_cols[0] + 1) > bw_w * 0.20
+    )
+    if tess_letter == "N" or _m_i_candidate:
         row_coms: list[tuple[int, float]] = []
         for row in range(bw_h):
             row_px = bw_pixels[row * bw_w : (row + 1) * bw_w]
@@ -827,6 +838,37 @@ def _ocr_tile_letter(
                 total_drift = abs(slope) * bw_h / bw_w
                 if total_drift < 0.05:
                     tess_letter = "M"
+
+    # 6c. O ↔ C disambiguation.
+    # Tesseract sometimes misreads the bold Wordle 'O' as 'C' because both
+    # glyphs are circular arcs.  The key difference is closure: 'O' is a
+    # complete ring — its right side has dark pixels all the way through
+    # the equator.  The bold Wordle 'C' has two tips (top and bottom) that
+    # extend to the right, but its equatorial band is empty (the opening).
+    #
+    # We use stroke_cols (already computed for the I-detector) to locate the
+    # right edge of the letter, then sample the rightmost 25 % of its
+    # horizontal extent inside the *equatorial* row band (42–58 % of the
+    # padded image height).  That narrow band captures the gap of C but the
+    # solid arc of O.
+    #
+    # Measured densities (equatorial, right-25 %):
+    #   O ≈ 0.97,  C ≈ 0.00  →  threshold 0.30 gives ample margin.
+    if tess_letter == "C" and stroke_cols:
+        _co_right = stroke_cols[-1]
+        _co_lw    = _co_right - stroke_cols[0] + 1    # letter width in px
+        _co_r0    = int(_co_right - _co_lw * 0.25)    # rightmost 25 % of letter
+        _co_r1    = _co_right + 1
+        _co_m0    = int(bw_h * 0.42)                  # equatorial band start
+        _co_m1    = int(bw_h * 0.58)                  # equatorial band end
+        _co_dark = _co_total = 0
+        for _row in range(_co_m0, _co_m1):
+            for _col in range(_co_r0, _co_r1):
+                _co_total += 1
+                if bw_pixels[_row * bw_w + _col] < 128:
+                    _co_dark += 1
+        if _co_total > 0 and _co_dark / _co_total > 0.30:
+            tess_letter = "O"
 
     return tess_letter or "?"
 

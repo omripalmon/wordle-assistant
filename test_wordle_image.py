@@ -147,19 +147,24 @@ def test_i_detection_in_chain_row() -> None:
 
 @REQUIRES_TESSERACT
 def test_smelt_m_read_correctly() -> None:
-    """Regression: bold M in SMELT was misread as N by Tesseract.
+    """Regression: bold M in SMELT misread as N (older Tesseract) or I (5.5.0).
 
-    Fixed by a shape-based M/N disambiguator that measures the per-row
-    centre-of-mass drift: M is left-right symmetric (drift ≈ 0), while N's
-    diagonal stroke causes a clear linear drift (≥ 0.05 normalised units).
+    Fixed by extending the M/N CoM-symmetry disambiguator to also trigger
+    when Tesseract returns 'I' but the stroke span is wide (> 20 % of the
+    binarised-image width), indicating the glyph is too wide to be a real 'I'.
 
-    Commit: fix OCR M→N confusion using centre-of-mass symmetry check.
+    Covers both known confusions:
+      - Tesseract <5.5: M → N  (original fix: CoM drift check)
+      - Tesseract 5.5.0: M → I  (new: wide-span guard + same CoM check)
     """
-    result = parse_wordle_image(_fixture("smelt_v1.png"))
-    assert len(result) == 1
-    word, resp = result[0]
-    assert resp == "bbygg", f"Colour codes changed unexpectedly: '{resp}'"
-    assert word == "smelt", f"Expected 'smelt', got '{word}' — M/N fix may have regressed"
+    for fixture in ("smelt_v1.png", "smelt_v2.png"):
+        result = parse_wordle_image(_fixture(fixture))
+        assert len(result) == 1, f"{fixture}: expected 1 guess, got {len(result)}"
+        word, resp = result[0]
+        assert resp == "bbygg", f"{fixture}: colour codes changed unexpectedly: '{resp}'"
+        assert word == "smelt", (
+            f"{fixture}: expected 'smelt', got '{word}' — M/N/I fix may have regressed"
+        )
 
 
 @REQUIRES_TESSERACT
@@ -171,6 +176,23 @@ def test_two_guess_game_both_rows_detected() -> None:
     result = parse_wordle_image(_fixture("raise_chain.png"))
     assert len(result) == 2, (
         f"raise_chain.png must detect 2 guesses, got {len(result)}"
+    )
+
+
+@REQUIRES_TESSERACT
+def test_could_o_read_correctly() -> None:
+    """Regression: bold 'O' in COULD misread as 'C' by Tesseract.
+
+    Fixed by checking equatorial right-side pixel density: 'O' (closed ring)
+    has dense dark pixels in the centre-right region, while 'C' (open arc)
+    has none there.
+    """
+    result = parse_wordle_image(_fixture("raise_could.png"))
+    assert len(result) == 2, "raise_could.png must have exactly 2 guesses"
+    word, resp = result[1]  # second guess is COULD
+    assert resp == "bbgyb", f"COULD colour codes changed: '{resp}'"
+    assert word == "could", (
+        f"expected 'could', got '{word}' — O/C fix may have regressed"
     )
 
 
