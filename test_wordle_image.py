@@ -180,6 +180,23 @@ def test_two_guess_game_both_rows_detected() -> None:
 
 
 @REQUIRES_TESSERACT
+def test_flume_f_read_correctly() -> None:
+    """Regression: bold 'F' in FLUME misread as 'E' by cloud Tesseract 5.x.
+
+    Fixed by checking lower-middle right-half pixel density: 'E' (bottom bar)
+    has dense dark pixels in rows 55–75 % of the right half of the letter,
+    while 'F' (no bottom bar) has none there.
+    """
+    result = parse_wordle_image(_fixture("raise_could_flume.png"))
+    assert len(result) == 3, "raise_could_flume.png must have exactly 3 guesses"
+    word, resp = result[2]  # third guess is FLUME
+    assert resp == "gggbg", f"FLUME colour codes changed: '{resp}'"
+    assert word == "flume", (
+        f"expected 'flume', got '{word}' — F/E fix may have regressed"
+    )
+
+
+@REQUIRES_TESSERACT
 def test_could_o_read_correctly() -> None:
     """Regression: bold 'O' in COULD misread as 'C' by Tesseract.
 

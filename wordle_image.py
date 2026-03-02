@@ -870,6 +870,35 @@ def _ocr_tile_letter(
         if _co_total > 0 and _co_dark / _co_total > 0.30:
             tess_letter = "O"
 
+    # 6d. F ↔ E disambiguation.
+    # Cloud Tesseract 5.x sometimes misreads the bold Wordle 'F' as 'E'.
+    # Both glyphs share a vertical stroke and two horizontal bars (top and
+    # middle), but only 'E' has a third horizontal bar at the bottom.
+    #
+    # We check dark-pixel density in the lower-middle row band (55–75 %) of
+    # the padded image, in the right half of the letter extent.  A genuine
+    # 'E' has dense dark pixels there (its bottom bar); a genuine 'F' has
+    # none (its stem ends after the middle bar).
+    #
+    # Measured densities (rows 55–75 %, right half of letter):
+    #   E ≈ 0.45+,  F ≈ 0.00  →  threshold 0.10 gives ample margin.
+    if tess_letter == "E" and stroke_cols:
+        _ef_left  = stroke_cols[0]
+        _ef_right = stroke_cols[-1]
+        _ef_lw    = _ef_right - _ef_left + 1
+        _ef_c0    = int(_ef_left + _ef_lw * 0.50)   # right half of letter
+        _ef_c1    = _ef_right + 1
+        _ef_m0    = int(bw_h * 0.55)                 # lower-middle rows
+        _ef_m1    = int(bw_h * 0.75)
+        _ef_dark = _ef_total = 0
+        for _row in range(_ef_m0, _ef_m1):
+            for _col in range(_ef_c0, _ef_c1):
+                _ef_total += 1
+                if bw_pixels[_row * bw_w + _col] < 128:
+                    _ef_dark += 1
+        if _ef_total > 0 and _ef_dark / _ef_total < 0.10:
+            tess_letter = "F"
+
     return tess_letter or "?"
 
 
