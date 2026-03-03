@@ -46,13 +46,13 @@ from wordle_image import parse_wordle_image
 
 # ---------------------------------------------------------------------------
 # GitHub auto-commit configuration
-# Set GITHUB_TOKEN (PAT with repo scope) and optionally GITHUB_REPO /
-# GITHUB_BRANCH on Railway.  When set, add_fixture commits new images and
-# the updated expected.json directly to the repo so Railway auto-deploys.
+# Set GITHUB_TOKEN (PAT with repo scope) on Railway.  When present,
+# add_fixture commits new images and the updated expected.json directly
+# to the repo so Railway auto-deploys — no other env vars required.
 # ---------------------------------------------------------------------------
 _GH_TOKEN  = os.environ.get("GITHUB_TOKEN", "")
-_GH_REPO   = os.environ.get("GITHUB_REPO",   "omripalmon/wordle-assistant")
-_GH_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+_GH_REPO   = "omripalmon/wordle-assistant"
+_GH_BRANCH = "main"
 
 _GH_API    = "https://api.github.com"
 _GH_HEADERS = {
