@@ -163,14 +163,14 @@
     ],
     "words": [
       "raise",
-      "orypt"
+      "crypt"
     ],
     "word_ocr_reliable": [
       true,
       true
     ],
-    "candidate_count": 7,
-    "best_overall_word": "amuck",
-    "best_valid_word": "chirk"
+    "candidate_count": 4,
+    "best_overall_word": "quirk",
+    "best_valid_word": "quirk"
   }
 }
