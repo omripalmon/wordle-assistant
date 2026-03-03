@@ -38,6 +38,8 @@ if str(ROOT) not in sys.path:
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from main import parse_guesses
 from optimal_guess import score_guess, valid_word_bonus
@@ -163,7 +165,7 @@ app.add_middleware(
     allow_origins=["*"] ,
     #_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -663,6 +665,190 @@ async def add_fixture(
     finally:
         if tmp_path:
             Path(tmp_path).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Fixture image serving
+# ---------------------------------------------------------------------------
+
+@app.get("/tests/fixture-image/{filename}")
+async def get_fixture_image(filename: str) -> FileResponse:
+    """Serve a raw fixture image file from tests/fixtures/."""
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+\.(png|jpg|jpeg)", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = ROOT / "tests" / "fixtures" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Fixture not found: {filename}")
+    media_type = (
+        "image/jpeg" if filename.lower().endswith((".jpg", ".jpeg")) else "image/png"
+    )
+    return FileResponse(str(path), media_type=media_type)
+
+
+@app.get("/tests/fixture-ocr/{filename}")
+async def fixture_ocr_single(filename: str) -> dict[str, Any]:
+    """Run parse_wordle_image on a single fixture and return {words, responses}.
+
+    Much faster than /tests/fixture-ocr (which processes all fixtures).
+    Used by the fixture manager's 'Fill from OCR' button.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+\.(png|jpg|jpeg)", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    fixture_path = ROOT / "tests" / "fixtures" / filename
+    if not fixture_path.exists():
+        raise HTTPException(status_code=404, detail=f"Fixture not found: {filename}")
+
+    def _process() -> dict[str, Any]:
+        try:
+            guesses = parse_wordle_image(str(fixture_path))
+            return {
+                "words":     [g[0] for g in guesses],
+                "responses": [g[1] for g in guesses],
+            }
+        except Exception as exc:
+            return {"error": str(exc), "words": [], "responses": []}
+
+    return await asyncio.to_thread(_process)
+
+
+# ---------------------------------------------------------------------------
+# Update fixture expected values
+# ---------------------------------------------------------------------------
+
+class UpdateExpectedBody(BaseModel):
+    words:     list[str]
+    responses: list[str]
+
+
+@app.put("/tests/expected/{filename}")
+async def update_expected(filename: str, body: UpdateExpectedBody) -> dict[str, Any]:
+    """Update the expected words/responses for an existing fixture.
+
+    Re-runs constraint analysis (filter + entropy scoring) from the supplied
+    words and responses to keep candidate_count and best_* fields current,
+    then writes the result to expected.json and commits to GitHub.
+
+    Parameters
+    ----------
+    filename:
+        The fixture filename, e.g. ``my_game.png``.
+    body:
+        ``words`` — list of guess words (5-letter strings or '?????' for unknown).
+        ``responses`` — list of colour codes matching each word (e.g. 'bgybb').
+    """
+    import json as _json
+
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+\.(png|jpg|jpeg)", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    fixtures_dir  = ROOT / "tests" / "fixtures"
+    expected_path = fixtures_dir / "expected.json"
+    fixture_path  = fixtures_dir / filename
+
+    if not fixture_path.exists():
+        raise HTTPException(status_code=404, detail=f"Fixture image not found: {filename}")
+
+    words     = body.words
+    responses = body.responses
+
+    if len(words) != len(responses):
+        raise HTTPException(status_code=400, detail="words and responses must have the same length")
+
+    raw_guesses        = list(zip(words, responses))
+    word_ocr_reliable  = ["?" not in w for w in words]
+
+    # Build constraint args from guesses whose letters are all known
+    known_guesses = [
+        (w, r) for w, r in raw_guesses
+        if w.replace("?", "").strip() and w.isalpha()
+    ]
+    guess_args = [f"{w},{r}" for w, r in known_guesses]
+
+    try:
+        kp, ep, mi, ma = (
+            parse_guesses(guess_args) if guess_args else ({}, {}, {}, {})
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Constraint error: {exc}") from exc
+
+    def _compute() -> tuple[int, str | None, str | None]:
+        candidates    = filter_words(
+            RAW_WORDS,
+            known_positions=kp or None,
+            excluded_positions=ep or None,
+            min_occurrences=mi or None,
+            max_occurrences=ma or None,
+        )
+        candidate_set = set(candidates)
+        n             = len(candidates)
+        bonus         = valid_word_bonus(n)
+
+        if n == 0:
+            scored: list[tuple[str, float, float]] = []
+        elif n == 1:
+            only = candidates[0]
+            rs   = score_guess(only, candidates)
+            scored = [(only, rs, rs + bonus)]
+        else:
+            scored = sorted(
+                (
+                    (w, (rs := score_guess(w, candidates)), rs + (bonus if w in candidate_set else 0.0))
+                    for w in RAW_WORDS
+                ),
+                key=lambda t: t[2],
+                reverse=True,
+            )
+
+        best_overall = scored[0][0] if scored else None
+        best_valid   = next((t[0] for t in scored if t[0] in candidate_set), None)
+        return n, best_overall, best_valid
+
+    n, best_overall, best_valid = await asyncio.to_thread(_compute)
+
+    # Merge into expected.json
+    existing: dict[str, Any] = {}
+    if expected_path.exists():
+        existing = _json.loads(expected_path.read_text())
+
+    entry: dict[str, Any] = {
+        "guess_count":       len(raw_guesses),
+        "responses":         responses,
+        "words":             words,
+        "word_ocr_reliable": word_ocr_reliable,
+        "candidate_count":   n,
+        "best_overall_word": best_overall,
+        "best_valid_word":   best_valid,
+    }
+    existing[filename] = entry
+
+    expected_json_bytes = (_json.dumps(existing, indent=2) + "\n").encode()
+    expected_path.write_bytes(expected_json_bytes)
+
+    # Commit expected.json to GitHub (image unchanged — no need to re-commit it)
+    github_committed = False
+    github_error: str | None = None
+
+    if _GH_TOKEN:
+        commit_msg = (
+            f"test: update expected for {filename} via fixture manager\n\n"
+            f"guess_count={entry['guess_count']}  "
+            f"candidates={entry['candidate_count']}  "
+            f"best={entry['best_valid_word'] or entry['best_overall_word']}"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as gh:
+                await _gh_commit_file(gh, "tests/fixtures/expected.json", expected_json_bytes, commit_msg)
+            github_committed = True
+        except Exception as exc:
+            github_error = str(exc)
+
+    return {
+        "filename":         filename,
+        "entry":            entry,
+        "github_committed": github_committed,
+        "github_error":     github_error,
+        "github_enabled":   bool(_GH_TOKEN),
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wordle Helper — Fixture Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: #121213;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 5rem;
+    }
+
+    /* ── Header ── */
+    header { text-align: center; margin-bottom: 2rem; }
+    h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .subtitle { color: #818384; font-size: 0.85rem; }
+    .nav-links {
+      display: flex;
+      gap: 1.2rem;
+      justify-content: center;
+      margin-top: 0.5rem;
+    }
+    .back-link {
+      font-size: 0.78rem;
+      color: #818384;
+      text-decoration: none;
+    }
+    .back-link:hover { color: #fff; }
+
+    /* ── Loading / empty states ── */
+    #loading-state, #empty-state, #error-state {
+      color: #818384;
+      font-size: 0.9rem;
+      margin-top: 3rem;
+      text-align: center;
+    }
+    #empty-state a, #error-state a { color: #538d4e; text-decoration: none; }
+    #empty-state a:hover, #error-state a:hover { text-decoration: underline; }
+    .spinner-ring {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid #3a3a3c;
+      border-top-color: #538d4e;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Fixture cards container ── */
+    #fixtures-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      width: min(860px, 100%);
+    }
+
+    /* ── Individual fixture card ── */
+    .fixture-card {
+      background: #1a1a1b;
+      border: 1px solid #2a2a2c;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    /* Card header */
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 1rem;
+      background: #111112;
+      border-bottom: 1px solid #2a2a2c;
+      gap: 0.7rem;
+    }
+    .card-filename {
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: #d7dadc;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .card-header-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+    /* Card body */
+    .card-body {
+      display: flex;
+      gap: 0;
+      min-height: 0;
+    }
+
+    /* Image panel */
+    .card-image-wrap {
+      flex-shrink: 0;
+      width: 200px;
+      min-width: 140px;
+      background: #0d0d0e;
+      border-right: 1px solid #2a2a2c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem;
+    }
+    .card-image {
+      max-width: 100%;
+      max-height: 260px;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+    .img-error {
+      color: #818384;
+      font-size: 0.72rem;
+      text-align: center;
+    }
+
+    /* Editor panel */
+    .card-editor {
+      flex: 1;
+      padding: 1rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    /* ── Editable board ── */
+    .edit-board {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .edit-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    /* Individual tiles */
+    .edit-tile {
+      width: 46px;
+      height: 46px;
+      border: 2px solid transparent;
+      border-radius: 4px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.1s, box-shadow 0.1s;
+      flex-shrink: 0;
+    }
+    .edit-tile:focus {
+      border-color: #ffffff;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.15);
+    }
+    .edit-tile:hover:not(:focus) {
+      border-color: #818384;
+    }
+
+    /* Keyboard hint */
+    .board-hint {
+      font-size: 0.68rem;
+      color: #3a3a3c;
+      line-height: 1.4;
+      margin-top: -0.2rem;
+    }
+    .board-hint kbd {
+      background: #2a2a2c;
+      border: 1px solid #3a3a3c;
+      border-radius: 3px;
+      padding: 0 3px;
+      font-family: monospace;
+      font-size: 0.65rem;
+      color: #818384;
+    }
+
+    /* Row management buttons */
+    .row-mgmt {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: -0.2rem;
+    }
+
+    /* ── Buttons ── */
+    .btn-small {
+      background: #2a2a2c;
+      border: 1px solid #3a3a3c;
+      border-radius: 6px;
+      color: #d7dadc;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.3rem 0.7rem;
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .btn-small:hover:not(:disabled) { background: #3a3a3c; border-color: #818384; }
+    .btn-small:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-tiny {
+      background: transparent;
+      border: 1px solid #2a2a2c;
+      border-radius: 5px;
+      color: #818384;
+      cursor: pointer;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      transition: all 0.12s;
+    }
+    .btn-tiny:hover:not(:disabled) { border-color: #538d4e; color: #6aad65; }
+    .btn-tiny:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-save {
+      align-self: flex-start;
+      background: #538d4e;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.5rem 1.2rem;
+      transition: background 0.12s, opacity 0.12s;
+      margin-top: 0.25rem;
+    }
+    .btn-save:hover:not(:disabled) { background: #6aad65; }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Stats row ── */
+    .card-stats {
+      font-size: 0.78rem;
+      color: #818384;
+    }
+    .card-stats strong { color: #d7dadc; }
+    .stat-sep { margin: 0 0.4rem; color: #3a3a3c; }
+
+    /* ── Save status ── */
+    .save-status {
+      font-size: 0.78rem;
+      min-height: 1.1rem;
+    }
+    .save-status.status-ok   { color: #6aad65; }
+    .save-status.status-warn { color: #d4b14a; }
+    .save-status.status-error { color: #f87171; }
+
+    /* ── Color legend ── */
+    .color-legend {
+      display: flex;
+      gap: 0.7rem;
+      font-size: 0.67rem;
+      color: #818384;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 3px;
+      vertical-align: middle;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .card-image-wrap { width: 110px; min-width: 90px; }
+      .edit-tile { width: 38px; height: 38px; font-size: 0.95rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Wordle Helper</h1>
+    <p class="subtitle">Fixture Manager</p>
+    <div class="nav-links">
+      <a class="back-link" href="index.html">← helper</a>
+      <a class="back-link" href="tests.html">← tests</a>
+      <a class="back-link" href="test_image.html">+ add fixture</a>
+    </div>
+  </header>
+
+  <div id="loading-state">
+    <span class="spinner-ring"></span>Loading fixtures…
+  </div>
+  <div id="empty-state" style="display:none">
+    No fixtures found. <a href="test_image.html">Add one?</a>
+  </div>
+  <div id="error-state" style="display:none"></div>
+
+  <div id="fixtures-container"></div>
+
+  <script>
+    const API_URL = "https://wordle-assistant-production-6f2c.up.railway.app";
+
+    const TILE_COLORS  = { g: "#538d4e", y: "#b59f3b", b: "#3a3a3c" };
+    const COLOR_CYCLE  = { b: "g", g: "y", y: "b" };
+    const COLOR_LABELS = { g: "Green (correct)", y: "Yellow (wrong place)", b: "Black (absent)" };
+
+    // boardState[filename] = { words: string[], responses: string[] }
+    const boardState = new Map();
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Bootstrap
+    // ────────────────────────────────────────────────────────────────────────
+    async function loadFixtures() {
+      try {
+        const resp = await fetch(`${API_URL}/tests/expected`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} from /tests/expected`);
+        const data = await resp.json();
+
+        document.getElementById("loading-state").style.display = "none";
+
+        const entries = Object.entries(data);
+        if (entries.length === 0) {
+          document.getElementById("empty-state").style.display = "block";
+          return;
+        }
+
+        const container = document.getElementById("fixtures-container");
+        for (const [filename, entry] of entries) {
+          container.appendChild(createFixtureCard(filename, entry));
+        }
+      } catch (err) {
+        document.getElementById("loading-state").style.display = "none";
+        const errEl = document.getElementById("error-state");
+        errEl.textContent = `⚠ Could not load fixtures: ${err.message}`;
+        errEl.style.display = "block";
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Card creation
+    // ────────────────────────────────────────────────────────────────────────
+    function createFixtureCard(filename, entry) {
+      // Clone arrays so we can mutate without affecting original
+      const words     = [...(entry.words     || [])];
+      const responses = [...(entry.responses || [])];
+      boardState.set(filename, { words, responses });
+
+      const card = document.createElement("div");
+      card.className = "fixture-card";
+      card.dataset.fixture = filename;
+
+      // ── Header ──────────────────────────────────────────────────────────
+      const header = document.createElement("div");
+      header.className = "card-header";
+
+      const filenameEl = document.createElement("span");
+      filenameEl.className = "card-filename";
+      filenameEl.textContent = filename;
+
+      const headerActions = document.createElement("div");
+      headerActions.className = "card-header-actions";
+
+      const ocrBtn = document.createElement("button");
+      ocrBtn.className = "btn-small btn-ocr";
+      ocrBtn.textContent = "Fill from OCR";
+
+      headerActions.appendChild(ocrBtn);
+      header.appendChild(filenameEl);
+      header.appendChild(headerActions);
+      card.appendChild(header);
+
+      // ── Body ─────────────────────────────────────────────────────────────
+      const body = document.createElement("div");
+      body.className = "card-body";
+
+      // Image panel
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "card-image-wrap";
+      const img = document.createElement("img");
+      img.className = "card-image";
+      img.alt = filename;
+      img.src = `${API_URL}/tests/fixture-image/${encodeURIComponent(filename)}`;
+      img.onerror = () => {
+        imgWrap.innerHTML = `<div class="img-error">Image not<br>available</div>`;
+      };
+      imgWrap.appendChild(img);
+      body.appendChild(imgWrap);
+
+      // Editor panel
+      const editor = document.createElement("div");
+      editor.className = "card-editor";
+
+      // Edit board
+      const boardEl = document.createElement("div");
+      boardEl.className = "edit-board";
+      boardEl.dataset.filename = filename;
+      renderBoard(boardEl, filename, words, responses);
+      editor.appendChild(boardEl);
+
+      // Keyboard hint
+      const hint = document.createElement("p");
+      hint.className = "board-hint";
+      hint.innerHTML =
+        "Click tile then <kbd>Space</kbd> to cycle colour (black→green→yellow) · type letter · <kbd>←→↑↓</kbd> navigate";
+      editor.appendChild(hint);
+
+      // Row management
+      const rowMgmt = document.createElement("div");
+      rowMgmt.className = "row-mgmt";
+      const addRowBtn = document.createElement("button");
+      addRowBtn.className = "btn-tiny";
+      addRowBtn.textContent = "+ row";
+      addRowBtn.title = "Add a guess row (max 6)";
+      const removeRowBtn = document.createElement("button");
+      removeRowBtn.className = "btn-tiny";
+      removeRowBtn.textContent = "− row";
+      removeRowBtn.title = "Remove the last guess row";
+      rowMgmt.appendChild(addRowBtn);
+      rowMgmt.appendChild(removeRowBtn);
+      editor.appendChild(rowMgmt);
+
+      // Color legend
+      const legend = document.createElement("div");
+      legend.className = "color-legend";
+      legend.innerHTML =
+        `<span><span class="legend-dot" style="background:#538d4e"></span>Green — correct</span>` +
+        `<span><span class="legend-dot" style="background:#b59f3b"></span>Yellow — wrong place</span>` +
+        `<span><span class="legend-dot" style="background:#3a3a3c"></span>Black — absent</span>`;
+      editor.appendChild(legend);
+
+      // Stats
+      const statsEl = document.createElement("div");
+      statsEl.className = "card-stats";
+      statsEl.dataset.statsFor = filename;
+      statsEl.innerHTML = formatStats(entry);
+      editor.appendChild(statsEl);
+
+      // Save button
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "btn-save";
+      saveBtn.textContent = "Save changes";
+      editor.appendChild(saveBtn);
+
+      // Save status
+      const statusEl = document.createElement("div");
+      statusEl.className = "save-status";
+      statusEl.dataset.statusFor = filename;
+      editor.appendChild(statusEl);
+
+      body.appendChild(editor);
+      card.appendChild(body);
+
+      // ── Wire up events ────────────────────────────────────────────────────
+      ocrBtn.addEventListener("click", () => fillFromOCR(filename, boardEl, ocrBtn));
+      addRowBtn.addEventListener("click", () => addRow(filename, boardEl));
+      removeRowBtn.addEventListener("click", () => removeRow(filename, boardEl));
+      saveBtn.addEventListener("click", () => saveFixture(filename, saveBtn));
+
+      return card;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Board rendering
+    // ────────────────────────────────────────────────────────────────────────
+    function renderBoard(boardEl, filename, words, responses) {
+      boardEl.innerHTML = "";
+
+      for (let i = 0; i < words.length; i++) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "edit-row";
+
+        for (let j = 0; j < 5; j++) {
+          const rawLetter = (words[i] || "?????")[j] || "?";
+          const letter    = rawLetter === "?" ? "" : rawLetter.toUpperCase();
+          const color     = ((responses[i] || "bbbbb")[j] || "b");
+          rowEl.appendChild(createTile(letter, color, filename, i, j, boardEl));
+        }
+        boardEl.appendChild(rowEl);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Tile creation
+    // ────────────────────────────────────────────────────────────────────────
+    function createTile(letter, color, filename, row, col, boardEl) {
+      const tile = document.createElement("button");
+      tile.className    = "edit-tile";
+      tile.dataset.color    = color;
+      tile.dataset.filename = filename;
+      tile.dataset.row      = row;
+      tile.dataset.col      = col;
+      tile.textContent      = letter;
+      tile.style.backgroundColor = TILE_COLORS[color] || TILE_COLORS.b;
+      tile.title = `${COLOR_LABELS[color] || "Black"} · click to focus, Space to cycle colour, type to set letter`;
+
+      tile.addEventListener("click", () => tile.focus());
+
+      tile.addEventListener("keydown", (e) => {
+        const r = +tile.dataset.row;
+        const c = +tile.dataset.col;
+
+        if (/^[a-zA-Z]$/.test(e.key)) {
+          // Set letter and advance
+          tile.textContent = e.key.toUpperCase();
+          syncBoardState(filename, boardEl);
+          const next = boardEl.querySelector(`[data-row="${r}"][data-col="${c + 1}"]`);
+          if (next) next.focus(); else {
+            const nextRowFirst = boardEl.querySelector(`[data-row="${r + 1}"][data-col="0"]`);
+            if (nextRowFirst) nextRowFirst.focus();
+          }
+          e.preventDefault();
+
+        } else if (e.key === "Backspace") {
+          tile.textContent = "";
+          syncBoardState(filename, boardEl);
+          const prev = boardEl.querySelector(`[data-row="${r}"][data-col="${c - 1}"]`);
+          if (prev) prev.focus();
+          e.preventDefault();
+
+        } else if (e.key === " " || e.key === "Enter") {
+          // Cycle colour
+          const cur  = tile.dataset.color || "b";
+          const next = COLOR_CYCLE[cur] || "b";
+          tile.dataset.color         = next;
+          tile.style.backgroundColor = TILE_COLORS[next];
+          tile.title = `${COLOR_LABELS[next]} · click to focus, Space to cycle colour, type to set letter`;
+          syncBoardState(filename, boardEl);
+          e.preventDefault();
+
+        } else if (e.key === "ArrowRight") {
+          const next = boardEl.querySelector(`[data-row="${r}"][data-col="${c + 1}"]`) ||
+                       boardEl.querySelector(`[data-row="${r + 1}"][data-col="0"]`);
+          if (next) next.focus();
+          e.preventDefault();
+
+        } else if (e.key === "ArrowLeft") {
+          const prev = boardEl.querySelector(`[data-row="${r}"][data-col="${c - 1}"]`) ||
+                       boardEl.querySelector(`[data-row="${r - 1}"][data-col="4"]`);
+          if (prev) prev.focus();
+          e.preventDefault();
+
+        } else if (e.key === "ArrowDown") {
+          const down = boardEl.querySelector(`[data-row="${r + 1}"][data-col="${c}"]`);
+          if (down) down.focus();
+          e.preventDefault();
+
+        } else if (e.key === "ArrowUp") {
+          const up = boardEl.querySelector(`[data-row="${r - 1}"][data-col="${c}"]`);
+          if (up) up.focus();
+          e.preventDefault();
+        }
+      });
+
+      return tile;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Sync DOM → boardState
+    // ────────────────────────────────────────────────────────────────────────
+    function syncBoardState(filename, boardEl) {
+      const state = boardState.get(filename);
+      if (!state) return;
+      state.words     = [];
+      state.responses = [];
+      boardEl.querySelectorAll(".edit-row").forEach((rowEl) => {
+        let word = "", response = "";
+        rowEl.querySelectorAll(".edit-tile").forEach((tile) => {
+          const letter = tile.textContent || "?";
+          word     += letter === "" ? "?" : letter.toLowerCase();
+          response += tile.dataset.color || "b";
+        });
+        state.words.push(word);
+        state.responses.push(response);
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Row management
+    // ────────────────────────────────────────────────────────────────────────
+    function addRow(filename, boardEl) {
+      const state = boardState.get(filename);
+      if (!state || state.words.length >= 6) return;
+      state.words.push("?????");
+      state.responses.push("bbbbb");
+      renderBoard(boardEl, filename, state.words, state.responses);
+    }
+
+    function removeRow(filename, boardEl) {
+      const state = boardState.get(filename);
+      if (!state || state.words.length <= 1) return;
+      state.words.pop();
+      state.responses.pop();
+      renderBoard(boardEl, filename, state.words, state.responses);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Fill from OCR
+    // ────────────────────────────────────────────────────────────────────────
+    async function fillFromOCR(filename, boardEl, btn) {
+      btn.disabled    = true;
+      btn.textContent = "Loading OCR…";
+
+      try {
+        const resp = await fetch(
+          `${API_URL}/tests/fixture-ocr/${encodeURIComponent(filename)}`
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        if (data.error) throw new Error(data.error);
+        if (!data.words || data.words.length === 0)
+          throw new Error("OCR found no guesses in this image");
+
+        const state = boardState.get(filename);
+        state.words     = [...data.words];
+        state.responses = [...data.responses];
+        renderBoard(boardEl, filename, state.words, state.responses);
+
+        btn.textContent = "✓ Filled";
+        setTimeout(() => {
+          btn.textContent = "Fill from OCR";
+          btn.disabled    = false;
+        }, 2200);
+
+      } catch (err) {
+        btn.textContent = "OCR failed";
+        btn.disabled    = false;
+        setStatus(filename, `⚠ OCR failed: ${err.message}`, "error");
+        setTimeout(() => { btn.textContent = "Fill from OCR"; }, 2500);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Save
+    // ────────────────────────────────────────────────────────────────────────
+    async function saveFixture(filename, saveBtn) {
+      // Sync DOM one more time
+      const card    = saveBtn.closest(".fixture-card");
+      const boardEl = card.querySelector(".edit-board");
+      syncBoardState(filename, boardEl);
+
+      const state = boardState.get(filename);
+      if (!state) return;
+
+      // Build payload: exclude rows where every letter is unknown ('?')
+      const words     = [];
+      const responses = [];
+      state.words.forEach((w, i) => {
+        // Keep row if it has at least one real letter
+        if (w.replace(/\?/g, "").trim()) {
+          words.push(w);
+          responses.push(state.responses[i]);
+        }
+      });
+
+      saveBtn.disabled    = true;
+      saveBtn.textContent = "Saving…";
+      setStatus(filename, "", "");
+
+      try {
+        const resp = await fetch(
+          `${API_URL}/tests/expected/${encodeURIComponent(filename)}`,
+          {
+            method:  "PUT",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ words, responses }),
+          }
+        );
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+
+        // Update stats display
+        const statsEl = card.querySelector(`[data-stats-for="${CSS.escape(filename)}"]`);
+        if (statsEl) statsEl.innerHTML = formatStats(data.entry);
+
+        // Status message
+        let msg, type;
+        if (data.github_committed) {
+          msg  = "✓ Saved & committed to GitHub — Railway will redeploy in ~1 min";
+          type = "ok";
+        } else if (data.github_enabled) {
+          msg  = `✓ Saved locally — GitHub commit failed: ${data.github_error}`;
+          type = "warn";
+        } else {
+          msg  = "✓ Saved locally (set GITHUB_TOKEN to auto-commit)";
+          type = "warn";
+        }
+        setStatus(filename, msg, type);
+        saveBtn.textContent = "Save changes";
+
+      } catch (err) {
+        setStatus(filename, `⚠ Save failed: ${err.message}`, "error");
+        saveBtn.textContent = "Save changes";
+      } finally {
+        saveBtn.disabled = false;
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ────────────────────────────────────────────────────────────────────────
+    function setStatus(filename, msg, type) {
+      const el = document.querySelector(`[data-status-for="${CSS.escape(filename)}"]`);
+      if (!el) return;
+      el.textContent = msg;
+      el.className   = "save-status" + (type ? ` status-${type}` : "");
+    }
+
+    function formatStats(entry) {
+      const n    = (entry.candidate_count != null) ? entry.candidate_count : "?";
+      const best = entry.best_valid_word || entry.best_overall_word || "—";
+      const gc   = (entry.guess_count   != null) ? entry.guess_count   : "?";
+      return (
+        `<span>Guesses: <strong>${esc(String(gc))}</strong></span>` +
+        `<span class="stat-sep">·</span>` +
+        `<span>Candidates: <strong>${esc(String(n))}</strong></span>` +
+        `<span class="stat-sep">·</span>` +
+        `<span>Best: <strong>${esc(best)}</strong></span>`
+      );
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    // ── Go ────────────────────────────────────────────────────────────────
+    loadFixtures();
+  </script>
+
+</body>
+</html>
