@@ -156,18 +156,21 @@
     "best_valid_word": "fluke"
   },
   "wordle_2026_03_03.png": {
-    "guess_count": 1,
+    "guess_count": 2,
     "responses": [
-      "ybgbb"
+      "ybgbb",
+      "bybbb"
     ],
     "words": [
-      "raise"
+      "raise",
+      "orypt"
     ],
     "word_ocr_reliable": [
+      true,
       true
     ],
-    "candidate_count": 64,
-    "best_overall_word": "crypt",
-    "best_valid_word": "print"
+    "candidate_count": 7,
+    "best_overall_word": "amuck",
+    "best_valid_word": "chirk"
   }
 }
