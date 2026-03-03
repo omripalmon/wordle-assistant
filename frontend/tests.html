@@ -196,6 +196,95 @@
       font-size: 0.9rem;
       width: min(600px, 100%);
     }
+
+    /* ── Image test tooltips ── */
+    .param-tt-wrap {
+      position: relative;
+      display: inline-block;
+      /* padding-bottom bridges the gap between param text and tooltip so
+         moving the cursor into the tooltip doesn't dismiss it            */
+      padding-bottom: 4px;
+    }
+    .param-tt-wrap .param {
+      cursor: help;
+      border-bottom: 1px dotted #555;
+    }
+    .img-tooltip {
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+      position: absolute;
+      top: 100%;    /* sits right below the padding-bottom edge */
+      left: 0;
+      z-index: 999;
+      background: #1e1e1f;
+      border: 1px solid #3a3a3c;
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      min-width: 200px;
+      max-width: 300px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+      pointer-events: none;
+      white-space: normal;
+      word-break: normal;
+    }
+    .param-tt-wrap:hover .img-tooltip {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Tooltip internals */
+    .tt-filename {
+      font-family: monospace;
+      font-size: 0.71rem;
+      color: #d7dadc;
+      margin-bottom: 0.55rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #2a2a2c;
+    }
+    .tt-section { margin-top: 0.5rem; }
+    .tt-label {
+      font-size: 0.61rem;
+      color: #818384;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.38rem;
+    }
+    .tt-empty {
+      font-size: 0.71rem;
+      color: #818384;
+      font-style: italic;
+    }
+
+    /* Mini Wordle grid */
+    .mini-grid { display: flex; flex-direction: column; gap: 3px; }
+    .mini-row  { display: flex; gap: 3px; }
+    .mini-tile {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.67rem;
+      color: #fff;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .mini-tile.mismatch {
+      outline: 2px solid #f87171;
+      outline-offset: 1px;
+    }
+
+    /* Tooltip status line */
+    .tt-match {
+      font-size: 0.71rem;
+      margin-top: 0.38rem;
+    }
+    .tt-match.ok  { color: #6aad65; }
+    .tt-match.bad { color: #f87171; }
+    .tt-match.dim { color: #818384; }
   </style>
 </head>
 <body>
@@ -241,6 +330,16 @@
     const rawWrap     = document.getElementById("raw-wrap");
     const rawToggle   = document.getElementById("raw-toggle");
     const rawOut      = document.getElementById("raw-out");
+
+    // ── Fixture metadata (fetched once on page load) ───────────────────────────
+    let expectedData = {};
+
+    (async () => {
+      try {
+        const r = await fetch(`${API_URL}/tests/expected`);
+        if (r.ok) expectedData = await r.json();
+      } catch { /* silently ignore — tooltips just won't show expected grids */ }
+    })();
 
     // ── Suite selection ────────────────────────────────────────────────────────
     let currentSuite = "image";
@@ -300,16 +399,29 @@
       setStatus(`<span class="spinner-ring"></span> Running ${currentSuite} tests…`);
 
       try {
-        const resp = await fetch(`${API_URL}/tests/run?suite=${currentSuite}`, {
-          method: "GET",
-        });
-        if (!resp.ok) {
-          const j = await resp.json().catch(() => ({ detail: resp.statusText }));
-          throw new Error(j.detail || `HTTP ${resp.status}`);
-        }
-        const data = await resp.json();
+        // Fetch test results and fixture OCR data in parallel.
+        // fixture-ocr runs parse_wordle_image on every fixture (~30 s);
+        // tests/run runs pytest (~1 min for image suite).  Both kick off
+        // simultaneously so the tooltip data is ready by the time tests finish.
+        const [testsResult, ocrResult] = await Promise.allSettled([
+          fetch(`${API_URL}/tests/run?suite=${currentSuite}`).then(async (r) => {
+            if (!r.ok) {
+              const j = await r.json().catch(() => ({ detail: r.statusText }));
+              throw new Error(j.detail || `HTTP ${r.status}`);
+            }
+            return r.json();
+          }),
+          fetch(`${API_URL}/tests/fixture-ocr`).then((r) => (r.ok ? r.json() : Promise.resolve(null))),
+        ]);
+
         stopTimer();
-        renderResults(data);
+
+        if (testsResult.status === "rejected") throw testsResult.reason;
+
+        const data    = testsResult.value;
+        const ocrData = (ocrResult.status === "fulfilled" && ocrResult.value) ? ocrResult.value : {};
+
+        renderResults(data, ocrData);
       } catch (err) {
         stopTimer();
         setStatus("");
@@ -346,7 +458,85 @@
       return { base: name.slice(0, bracket), param: name.slice(bracket) };
     }
 
-    function renderResults(data) {
+    /** Extract a .png fixture filename from a param like "[raise_could.png]". */
+    function extractPngFilename(param) {
+      const m = /^\[(.+\.png)\]$/i.exec(param);
+      return m ? m[1] : null;
+    }
+
+    /** Build a mini Wordle grid HTML string.
+     *  If cmpWords / cmpResps are provided, tiles that differ are marked .mismatch.
+     */
+    function buildMiniGrid(words, responses, cmpWords, cmpResps) {
+      const TILE_COLORS = { g: "#538d4e", y: "#b59f3b", b: "#3a3a3c" };
+      let html = '<div class="mini-grid">';
+      for (let i = 0; i < words.length; i++) {
+        html += '<div class="mini-row">';
+        const word = words[i] || "";
+        const resp = responses[i] || "bbbbb";
+        for (let j = 0; j < 5; j++) {
+          const letter = (word[j] || "?").toUpperCase();
+          const code   = resp[j] || "b";
+          const color  = TILE_COLORS[code] || TILE_COLORS.b;
+          const letterMismatch = cmpWords && ((cmpWords[i] || "")[j] !== (words[i] || "")[j]);
+          const colorMismatch  = cmpResps && ((cmpResps[i] || "")[j] !== (responses[i] || "")[j]);
+          const cls = (letterMismatch || colorMismatch) ? ' mismatch' : '';
+          html += `<div class="mini-tile${cls}" style="background:${color}">${escHtml(letter)}</div>`;
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    /** Build the HTML content for an image-test tooltip. */
+    function buildTooltipContent(filename, expEntry, ocrEntry) {
+      const expWords = expEntry.words      || [];
+      const expResps = expEntry.responses  || [];
+      const ocrWords = (ocrEntry && !ocrEntry.error) ? (ocrEntry.words      || []) : null;
+      const ocrResps = (ocrEntry && !ocrEntry.error) ? (ocrEntry.responses  || []) : null;
+
+      let html = `<div class="tt-filename">${escHtml(filename)}</div>`;
+
+      // ── Expected section ────────────────────────────────────────────────────
+      html += '<div class="tt-section">';
+      html += '<div class="tt-label">Expected</div>';
+      if (expWords.length === 0) {
+        html += '<div class="tt-empty">Blank board (0 guesses)</div>';
+      } else {
+        // Pass ocrWords/Resps so mismatching expected tiles get highlighted
+        html += buildMiniGrid(expWords, expResps, ocrWords, ocrResps);
+      }
+      html += '</div>';
+
+      // ── Identified section ──────────────────────────────────────────────────
+      html += '<div class="tt-section">';
+      html += '<div class="tt-label">Identified</div>';
+
+      if (ocrEntry == null) {
+        // OCR data unavailable (endpoint failed or not yet loaded)
+        html += '<div class="tt-empty">Not available</div>';
+      } else if (ocrEntry.error) {
+        html += `<div class="tt-match bad">⚠ ${escHtml(ocrEntry.error)}</div>`;
+      } else {
+        // Compare identified with expected
+        const wordsMatch = JSON.stringify(ocrWords) === JSON.stringify(expWords);
+        const respsMatch = JSON.stringify(ocrResps) === JSON.stringify(expResps);
+
+        if (wordsMatch && respsMatch) {
+          html += '<div class="tt-match ok">✓ Matches expected</div>';
+        } else {
+          // Show identified grid; mismatching tiles get red outline
+          html += buildMiniGrid(ocrWords, ocrResps, expWords, expResps);
+          html += '<div class="tt-match bad">⚠ Differs from expected</div>';
+        }
+      }
+      html += '</div>';
+
+      return html;
+    }
+
+    function renderResults(data, ocrData = {}) {
       // Status line
       const allGood = data.failed === 0 && data.error === 0;
       const icon    = allGood ? "✓" : "✗";
@@ -402,10 +592,26 @@
 
           const nameWrap = document.createElement("div");
           nameWrap.style.flex = "1";
+
           const { base, param } = splitName(t.name);
           const nameEl = document.createElement("span");
           nameEl.className = "test-name";
-          nameEl.innerHTML = `${escHtml(base)}<span class="param">${escHtml(param)}</span>`;
+
+          // If param is a .png fixture name, wrap it in a tooltip
+          const imgFile = extractPngFilename(param);
+          if (imgFile && expectedData[imgFile]) {
+            const ocrEntry   = ocrData[imgFile] ?? null;
+            const ttContent  = buildTooltipContent(imgFile, expectedData[imgFile], ocrEntry);
+            nameEl.innerHTML =
+              escHtml(base) +
+              `<span class="param-tt-wrap">` +
+                `<span class="param">${escHtml(param)}</span>` +
+                `<div class="img-tooltip">${ttContent}</div>` +
+              `</span>`;
+          } else {
+            nameEl.innerHTML = `${escHtml(base)}<span class="param">${escHtml(param)}</span>`;
+          }
+
           nameWrap.appendChild(nameEl);
 
           if (t.message) {

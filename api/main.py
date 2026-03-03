@@ -329,6 +329,52 @@ def _parse_pytest_output(stdout: str, elapsed: float, suite: str) -> dict[str, A
     }
 
 
+@app.get("/tests/expected")
+async def get_expected() -> dict[str, Any]:
+    """Return the expected fixture metadata from tests/fixtures/expected.json."""
+    import json
+    path = ROOT / "tests" / "fixtures" / "expected.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="expected.json not found")
+    return json.loads(path.read_text())
+
+
+@app.get("/tests/fixture-ocr")
+async def fixture_ocr_results() -> dict[str, Any]:
+    """Run parse_wordle_image on every fixture and return actual OCR results.
+
+    Returns a mapping of fixture filename → {words, responses} (or {error}).
+    Used by the frontend to compare expected vs identified characters/colours.
+    """
+    import json
+
+    fixtures_dir = ROOT / "tests" / "fixtures"
+    expected_path = fixtures_dir / "expected.json"
+    if not expected_path.exists():
+        raise HTTPException(status_code=404, detail="expected.json not found")
+
+    expected: dict[str, Any] = json.loads(expected_path.read_text())
+
+    def _process_all() -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        for filename in expected:
+            fixture_path = fixtures_dir / filename
+            if not fixture_path.exists():
+                results[filename] = {"error": "fixture not found", "words": [], "responses": []}
+                continue
+            try:
+                guesses = parse_wordle_image(str(fixture_path))
+                results[filename] = {
+                    "words":     [g[0] for g in guesses],
+                    "responses": [g[1] for g in guesses],
+                }
+            except Exception as exc:
+                results[filename] = {"error": str(exc), "words": [], "responses": []}
+        return results
+
+    return await asyncio.to_thread(_process_all)
+
+
 @app.get("/tests/run")
 async def run_tests(suite: str = "image") -> dict[str, Any]:
     """Run the regression test suite and return structured results.
