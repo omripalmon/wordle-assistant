@@ -739,7 +739,7 @@
 
       addBtn.disabled = true;
       statusEl.className = "";
-      statusEl.innerHTML = `<span class="small-spinner"></span> Saving fixture to server…`;
+      statusEl.innerHTML = `<span class="small-spinner"></span> Saving fixture and committing to git…`;
 
       try {
         const form = new FormData();
@@ -762,26 +762,54 @@
 
         addBtn.textContent = `✓ ${verb === "updated" ? "Updated" : "Added"}`;
 
-        statusEl.className = "ok";
-        statusEl.innerHTML =
-          `✓ <strong>${escHtml(filename)}</strong> ${verb} to the regression suite. ` +
-          `<a href="tests.html" style="color:#6aad65;text-decoration:underline;">Run tests →</a><br>` +
-          `<span style="color:#818384;font-size:0.78rem;">` +
-          `To persist across deployments, commit the image and expected.json to git.</span>`;
+        // ── Build status message based on GitHub commit outcome ─────────────
+        let statusHtml = `✓ <strong>${escHtml(filename)}</strong> ${verb} to the regression suite. ` +
+          `<a href="tests.html" style="color:#6aad65;text-decoration:underline;">Run tests →</a><br>`;
 
-        // Show the expected.json snippet the user can copy
-        const snippet = { [filename]: entry };
-        const entryBox = document.createElement("div");
-        entryBox.style.marginTop = "0.8rem";
-        const lbl = document.createElement("div");
-        lbl.className = "fixture-entry-box-label";
-        lbl.textContent = "expected.json entry (copy to commit locally)";
-        const pre = document.createElement("pre");
-        pre.className = "fixture-entry-box";
-        pre.textContent = JSON.stringify(snippet, null, 2);
-        entryBox.appendChild(lbl);
-        entryBox.appendChild(pre);
-        statusEl.appendChild(entryBox);
+        let showSnippet = false;
+
+        if (result.github_committed) {
+          // Happy path: committed to git, Railway will auto-deploy
+          statusEl.className = "ok";
+          statusHtml +=
+            `<span style="color:#818384;font-size:0.78rem;">` +
+            `✓ Committed to <strong>GitHub</strong> — Railway will redeploy automatically in ~1 min. ` +
+            `The fixture will be permanent after the next deploy.</span>`;
+        } else if (!result.github_enabled) {
+          // Token not configured — fixture lives on server only until next deploy
+          statusEl.className = "ok";
+          statusHtml +=
+            `<span style="color:#b59f3b;font-size:0.78rem;">` +
+            `⚠ <strong>GITHUB_TOKEN</strong> is not set on Railway — fixture saved on the server for ` +
+            `this session only. To make it permanent: set the env var, or commit the files below manually.</span>`;
+          showSnippet = true;
+        } else {
+          // Token was set but the API call failed
+          statusEl.className = "ok";   // local save still succeeded
+          statusHtml +=
+            `<span style="color:#f87171;font-size:0.78rem;">` +
+            `⚠ GitHub commit failed: ${escHtml(result.github_error || "unknown error")}. ` +
+            `Fixture saved on server — commit the files below manually to persist.</span>`;
+          showSnippet = true;
+        }
+
+        statusEl.innerHTML = statusHtml;
+
+        // Show the expected.json snippet when the user needs to act manually
+        if (showSnippet) {
+          const snippet = { [filename]: entry };
+          const entryBox = document.createElement("div");
+          entryBox.style.marginTop = "0.8rem";
+          const lbl = document.createElement("div");
+          lbl.className = "fixture-entry-box-label";
+          lbl.textContent = "expected.json entry — add to tests/fixtures/expected.json and commit both files";
+          const pre = document.createElement("pre");
+          pre.className = "fixture-entry-box";
+          pre.textContent = JSON.stringify(snippet, null, 2);
+          entryBox.appendChild(lbl);
+          entryBox.appendChild(pre);
+          statusEl.appendChild(entryBox);
+        }
 
       } catch (err) {
         statusEl.className = "bad";

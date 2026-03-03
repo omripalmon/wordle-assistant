@@ -17,6 +17,7 @@ Run locally (from the repo root):
 from __future__ import annotations
 
 import asyncio
+import base64
 import math
 import os
 import re
@@ -34,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,6 +43,62 @@ from main import parse_guesses
 from optimal_guess import score_guess, valid_word_bonus
 from wordle_filter import filter_words, load_words
 from wordle_image import parse_wordle_image
+
+# ---------------------------------------------------------------------------
+# GitHub auto-commit configuration
+# Set GITHUB_TOKEN (PAT with repo scope) and optionally GITHUB_REPO /
+# GITHUB_BRANCH on Railway.  When set, add_fixture commits new images and
+# the updated expected.json directly to the repo so Railway auto-deploys.
+# ---------------------------------------------------------------------------
+_GH_TOKEN  = os.environ.get("GITHUB_TOKEN", "")
+_GH_REPO   = os.environ.get("GITHUB_REPO",   "omripalmon/wordle-assistant")
+_GH_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+
+_GH_API    = "https://api.github.com"
+_GH_HEADERS = {
+    "Accept":               "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+
+
+async def _gh_commit_file(
+    client:  httpx.AsyncClient,
+    path:    str,          # repo-relative, e.g. "tests/fixtures/game.png"
+    content: bytes,        # raw bytes (will be base64-encoded for the API)
+    message: str,
+) -> dict[str, Any]:
+    """Create or update one file in the configured GitHub repo.
+
+    Uses the GitHub Contents API:
+      GET  /repos/{repo}/contents/{path}  → fetch current SHA (if file exists)
+      PUT  /repos/{repo}/contents/{path}  → create / overwrite the file
+    """
+    if not _GH_TOKEN:
+        raise RuntimeError("GITHUB_TOKEN is not configured")
+
+    url     = f"{_GH_API}/repos/{_GH_REPO}/contents/{path}"
+    headers = {**_GH_HEADERS, "Authorization": f"Bearer {_GH_TOKEN}"}
+
+    # Retrieve the current blob SHA so GitHub accepts the overwrite
+    sha: str | None = None
+    get_resp = await client.get(url, headers=headers)
+    if get_resp.status_code == 200:
+        sha = get_resp.json().get("sha")
+    elif get_resp.status_code not in (404,):
+        get_resp.raise_for_status()   # unexpected error
+
+    payload: dict[str, Any] = {
+        "message": message,
+        "content": base64.b64encode(content).decode(),
+        "branch":  _GH_BRANCH,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    put_resp = await client.put(url, json=payload, headers=headers)
+    put_resp.raise_for_status()
+    return put_resp.json()
+
 
 # ---------------------------------------------------------------------------
 # Word list — loaded once at startup to avoid per-request disk I/O
@@ -550,12 +608,42 @@ async def add_fixture(
             "best_valid_word":   best_valid,
         }
         existing[filename] = entry
-        expected_path.write_text(json.dumps(existing, indent=2) + "\n")
+        expected_json_bytes = (json.dumps(existing, indent=2) + "\n").encode()
+        expected_path.write_bytes(expected_json_bytes)
+
+        # -- 5. Auto-commit to GitHub (if GITHUB_TOKEN is configured) ----------
+        github_committed = False
+        github_error: str | None = None
+
+        if _GH_TOKEN:
+            commit_msg = (
+                f"test: add fixture {filename} via web UI\n\n"
+                f"guess_count={entry['guess_count']}  "
+                f"candidates={entry['candidate_count']}  "
+                f"best={entry['best_valid_word'] or entry['best_overall_word']}"
+            )
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as gh:
+                    # Commit the image and expected.json in parallel — they are
+                    # different files so there's no SHA conflict between them.
+                    img_path  = f"tests/fixtures/{filename}"
+                    json_path = "tests/fixtures/expected.json"
+                    await asyncio.gather(
+                        _gh_commit_file(gh, img_path,  contents,           commit_msg),
+                        _gh_commit_file(gh, json_path, expected_json_bytes, commit_msg),
+                    )
+                github_committed = True
+            except Exception as exc:
+                github_error = str(exc)
 
         return {
-            "status":       "updated" if existed_before else "added",
-            "filename":     filename,
-            "entry":        entry,
+            "status":           "updated" if existed_before else "added",
+            "filename":         filename,
+            "entry":            entry,
+            "github_committed": github_committed,
+            "github_error":     github_error,
+            # Tells the caller whether auto-commit was even attempted
+            "github_enabled":   bool(_GH_TOKEN),
         }
 
     finally:
