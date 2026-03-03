@@ -70,34 +70,49 @@ async def _gh_commit_file(
     """Create or update one file in the configured GitHub repo.
 
     Uses the GitHub Contents API:
-      GET  /repos/{repo}/contents/{path}  → fetch current SHA (if file exists)
+      GET  /repos/{repo}/contents/{path}  → fetch current blob SHA (if exists)
       PUT  /repos/{repo}/contents/{path}  → create / overwrite the file
+
+    Retries once on 409 Conflict, re-fetching the blob SHA before retrying.
+    409 occurs when two commits race to the same branch tip; retrying with a
+    fresh SHA is sufficient because the branch tip has stabilised by then.
     """
     if not _GH_TOKEN:
         raise RuntimeError("GITHUB_TOKEN is not configured")
 
     url     = f"{_GH_API}/repos/{_GH_REPO}/contents/{path}"
     headers = {**_GH_HEADERS, "Authorization": f"Bearer {_GH_TOKEN}"}
+    encoded = base64.b64encode(content).decode()
 
-    # Retrieve the current blob SHA so GitHub accepts the overwrite
-    sha: str | None = None
-    get_resp = await client.get(url, headers=headers)
-    if get_resp.status_code == 200:
-        sha = get_resp.json().get("sha")
-    elif get_resp.status_code not in (404,):
-        get_resp.raise_for_status()   # unexpected error
+    for attempt in range(2):          # attempt 0 = normal, attempt 1 = retry
+        # Fetch the current blob SHA so GitHub accepts the overwrite.
+        # A 404 means the file is new — no SHA required.
+        sha: str | None = None
+        get_resp = await client.get(url, headers=headers)
+        if get_resp.status_code == 200:
+            sha = get_resp.json().get("sha")
+        elif get_resp.status_code != 404:
+            get_resp.raise_for_status()
 
-    payload: dict[str, Any] = {
-        "message": message,
-        "content": base64.b64encode(content).decode(),
-        "branch":  _GH_BRANCH,
-    }
-    if sha:
-        payload["sha"] = sha
+        payload: dict[str, Any] = {
+            "message": message,
+            "content": encoded,
+            "branch":  _GH_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
 
-    put_resp = await client.put(url, json=payload, headers=headers)
-    put_resp.raise_for_status()
-    return put_resp.json()
+        put_resp = await client.put(url, json=payload, headers=headers)
+
+        if put_resp.status_code == 409 and attempt == 0:
+            # Branch tip moved between our GET and PUT — refresh SHA and retry
+            continue
+
+        put_resp.raise_for_status()
+        return put_resp.json()
+
+    # Should be unreachable, but satisfies the type checker
+    raise RuntimeError(f"Failed to commit {path} after retries")
 
 
 # ---------------------------------------------------------------------------
@@ -624,14 +639,13 @@ async def add_fixture(
             )
             try:
                 async with httpx.AsyncClient(timeout=30.0) as gh:
-                    # Commit the image and expected.json in parallel — they are
-                    # different files so there's no SHA conflict between them.
+                    # Commit sequentially: each PUT advances the branch tip, so
+                    # the next commit automatically bases on the updated tip.
+                    # Parallel commits race on the branch tip and cause 409s.
                     img_path  = f"tests/fixtures/{filename}"
                     json_path = "tests/fixtures/expected.json"
-                    await asyncio.gather(
-                        _gh_commit_file(gh, img_path,  contents,           commit_msg),
-                        _gh_commit_file(gh, json_path, expected_json_bytes, commit_msg),
-                    )
+                    await _gh_commit_file(gh, img_path,  contents,           commit_msg)
+                    await _gh_commit_file(gh, json_path, expected_json_bytes, commit_msg)
                 github_committed = True
             except Exception as exc:
                 github_error = str(exc)
