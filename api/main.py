@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from main import parse_guesses
@@ -428,6 +428,139 @@ async def run_tests(suite: str = "image") -> dict[str, Any]:
         return result
 
     return await asyncio.to_thread(_run)
+
+
+# ---------------------------------------------------------------------------
+# Add-fixture endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/tests/add-fixture")
+async def add_fixture(
+    image: UploadFile = File(...),
+    filename: str = Form(...),
+) -> dict[str, Any]:
+    """Save an image as a test fixture and update tests/fixtures/expected.json.
+
+    Steps
+    -----
+    1. Validate the filename (letters, digits, underscores, hyphens; .png/.jpg/.jpeg only).
+    2. Write the image to tests/fixtures/<filename>.
+    3. Run parse_wordle_image + full entropy analysis (same as /analyze).
+    4. Insert or overwrite the entry in expected.json.
+    5. Return the new entry plus "added" / "updated" status.
+
+    Parameters
+    ----------
+    image:    The Wordle screenshot to register as a fixture.
+    filename: Target filename, e.g. ``my_game.png``.
+    """
+    import json, re
+
+    # -- 1. Validate filename --------------------------------------------------
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+\.(png|jpg|jpeg)", filename):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "filename must contain only letters, digits, underscores, or "
+                "hyphens and must end with .png, .jpg, or .jpeg"
+            ),
+        )
+
+    fixtures_dir  = ROOT / "tests" / "fixtures"
+    fixtures_dir.mkdir(parents=True, exist_ok=True)
+    expected_path = fixtures_dir / "expected.json"
+
+    existed_before = (fixtures_dir / filename).exists()
+
+    # -- 2. Save the image to fixtures/ ---------------------------------------
+    contents = await image.read()
+    (fixtures_dir / filename).write_bytes(contents)
+
+    # -- 3. Run analysis (identical logic to /analyze) ------------------------
+    suffix   = Path(filename).suffix or ".png"
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+            tmp.write(contents)
+
+        try:
+            raw_guesses: list[tuple[str, str]] = parse_wordle_image(tmp_path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        words     = [g[0] for g in raw_guesses]
+        responses = [g[1] for g in raw_guesses]
+        word_ocr_reliable = ["?" not in w for w in words]
+
+        known_guesses = [
+            (w, r) for w, r in raw_guesses
+            if w.replace("?", "").strip() and w.isalpha()
+        ]
+        guess_args = [f"{w},{r}" for w, r in known_guesses]
+        try:
+            kp, ep, mi, ma = (
+                parse_guesses(guess_args) if guess_args else ({}, {}, {}, {})
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Constraint error: {exc}") from exc
+
+        candidates    = filter_words(
+            RAW_WORDS,
+            known_positions=kp or None,
+            excluded_positions=ep or None,
+            min_occurrences=mi or None,
+            max_occurrences=ma or None,
+        )
+        candidate_set = set(candidates)
+        n             = len(candidates)
+        bonus         = valid_word_bonus(n)
+
+        if n == 0:
+            scored: list[tuple[str, float, float]] = []
+        elif n == 1:
+            only      = candidates[0]
+            raw_score = score_guess(only, candidates)
+            scored    = [(only, raw_score, raw_score + bonus)]
+        else:
+            scored = sorted(
+                (
+                    (w, (rs := score_guess(w, candidates)), rs + (bonus if w in candidate_set else 0.0))
+                    for w in RAW_WORDS
+                ),
+                key=lambda t: t[2],
+                reverse=True,
+            )
+
+        best_overall = scored[0][0]  if scored else None
+        best_valid   = next((t[0] for t in scored if t[0] in candidate_set), None)
+
+        # -- 4. Update expected.json ------------------------------------------
+        existing: dict[str, Any] = {}
+        if expected_path.exists():
+            existing = json.loads(expected_path.read_text())
+
+        entry: dict[str, Any] = {
+            "guess_count":       len(raw_guesses),
+            "responses":         responses,
+            "words":             words,
+            "word_ocr_reliable": word_ocr_reliable,
+            "candidate_count":   n,
+            "best_overall_word": best_overall,
+            "best_valid_word":   best_valid,
+        }
+        existing[filename] = entry
+        expected_path.write_text(json.dumps(existing, indent=2) + "\n")
+
+        return {
+            "status":       "updated" if existed_before else "added",
+            "filename":     filename,
+            "entry":        entry,
+        }
+
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

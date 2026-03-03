@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wordle Helper — Add Regression Fixture</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: #121213;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────────── */
+    header { text-align: center; margin-bottom: 2rem; }
+    h1 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .subtitle { color: #818384; font-size: 0.85rem; margin-bottom: 0.3rem; }
+    .nav-links {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 0.4rem;
+    }
+    .nav-links a {
+      font-size: 0.78rem;
+      color: #818384;
+      text-decoration: none;
+    }
+    .nav-links a:hover { color: #fff; }
+
+    /* ── Upload zone ──────────────────────────────────────────────────────── */
+    #dropzone {
+      width: min(500px, 100%);
+      border: 2px dashed #3a3a3c;
+      border-radius: 14px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      user-select: none;
+    }
+    #dropzone:hover,
+    #dropzone.drag-over { border-color: #538d4e; background: rgba(83,141,78,0.07); }
+    #dropzone .icon { font-size: 3rem; margin-bottom: 0.75rem; display: block; }
+    #dropzone .primary { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    #dropzone .secondary { color: #818384; font-size: 0.82rem; line-height: 1.5; }
+    #file-input { display: none; }
+
+    /* ── Preview ──────────────────────────────────────────────────────────── */
+    #preview-section { display: none; margin-top: 1.5rem; text-align: center; }
+    #preview-img {
+      max-width: min(280px, 100%);
+      max-height: 280px;
+      border-radius: 10px;
+      object-fit: contain;
+      border: 1px solid #3a3a3c;
+    }
+    .image-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.6rem;
+      flex-wrap: wrap;
+    }
+    #reselect-btn, #paste-new-btn {
+      font-size: 0.8rem;
+      color: #818384;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #reselect-btn:hover, #paste-new-btn:hover { color: #ffffff; }
+    .action-sep { color: #3a3a3c; font-size: 0.8rem; }
+    #paste-new-btn kbd {
+      background: #2a2a2c;
+      border: 1px solid #3a3a3c;
+      border-radius: 3px;
+      padding: 0 3px;
+      font-size: 0.7rem;
+      font-family: inherit;
+      text-decoration: none;
+      display: inline-block;
+    }
+    #paste-toast { font-size: 0.75rem; color: #538d4e; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+    #paste-toast.visible { opacity: 1; }
+
+    /* ── Spinner ──────────────────────────────────────────────────────────── */
+    #spinner {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.9rem;
+      margin-top: 2.5rem;
+    }
+    .spinner-ring {
+      width: 52px; height: 52px;
+      border: 5px solid #3a3a3c;
+      border-top-color: #538d4e;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #spinner p { color: #818384; font-size: 0.88rem; }
+
+    /* ── Error ────────────────────────────────────────────────────────────── */
+    #error-box {
+      display: none;
+      margin-top: 1.5rem;
+      background: #2c0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      width: min(600px, 100%);
+      line-height: 1.5;
+    }
+
+    /* ── Results container ────────────────────────────────────────────────── */
+    #results {
+      display: none;
+      width: min(700px, 100%);
+      margin-top: 2.5rem;
+    }
+
+    section { margin-bottom: 2.2rem; }
+
+    h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #818384;
+      margin-bottom: 0.8rem;
+      border-bottom: 1px solid #2a2a2c;
+      padding-bottom: 0.4rem;
+    }
+
+    /* ── Guess tiles ──────────────────────────────────────────────────────── */
+    .guess-row { display: flex; gap: 5px; margin-bottom: 5px; }
+    .tile {
+      width: 52px; height: 52px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; font-weight: 800;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .tile.green  { background: #538d4e; }
+    .tile.yellow { background: #b59f3b; }
+    .tile.black  { background: #3a3a3c; }
+    .tile.unknown { background: #3a3a3c; opacity: 0.5; }
+
+    /* ── Best-guess cards ─────────────────────────────────────────────────── */
+    .best-cards { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .best-card {
+      flex: 1 1 200px;
+      background: #1a1a1b;
+      border: 1px solid #2a2a2c;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+    }
+    .best-card .label { font-size: 0.72rem; color: #818384; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.4rem; }
+    .best-card .word { font-size: 1.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.18em; color: #538d4e; }
+    .best-card .meta { font-size: 0.75rem; color: #818384; margin-top: 0.3rem; }
+
+    /* ── Suggestions table ────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    .suggestions-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .suggestions-table th {
+      text-align: left; padding: 7px 12px; color: #818384;
+      font-weight: 600; border-bottom: 1px solid #2a2a2c; white-space: nowrap;
+    }
+    .suggestions-table td { padding: 8px 12px; border-bottom: 1px solid #1e1e1f; white-space: nowrap; }
+    .suggestions-table tr:last-child td { border-bottom: none; }
+    .suggestions-table tr.rank-1 td { color: #538d4e; font-weight: 700; }
+    .word-cell { text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; }
+    .candidate-badge {
+      display: inline-block; background: rgba(83,141,78,0.2); color: #538d4e;
+      border-radius: 4px; padding: 1px 6px; font-size: 0.72rem;
+      font-weight: 600; letter-spacing: 0.04em;
+    }
+
+    /* ── Candidates list ──────────────────────────────────────────────────── */
+    #candidate-count { color: #818384; font-size: 0.82rem; margin-bottom: 0.6rem; }
+    #candidates-list {
+      display: flex; flex-wrap: wrap; gap: 5px;
+      max-height: 160px; overflow-y: auto; padding-right: 4px;
+    }
+    #candidates-list::-webkit-scrollbar { width: 4px; }
+    #candidates-list::-webkit-scrollbar-track { background: transparent; }
+    #candidates-list::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 4px; }
+    .candidate-pill {
+      background: #1a1a1b; border: 1px solid #2a2a2c; border-radius: 5px;
+      padding: 3px 9px; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+
+    .notice { color: #818384; font-size: 0.88rem; font-style: italic; padding: 0.5rem 0; }
+
+    /* ── Add-to-regression card ───────────────────────────────────────────── */
+    #fixture-section {
+      display: none;
+      width: min(700px, 100%);
+      margin-top: 0.5rem;
+      margin-bottom: 2rem;
+      background: #1a1a1b;
+      border: 1px solid #3a3a3c;
+      border-radius: 12px;
+      padding: 1.5rem 1.75rem;
+    }
+    #fixture-section h2 {
+      color: #538d4e;
+      border-color: #2a3a2a;
+    }
+
+    .fixture-intro {
+      font-size: 0.83rem;
+      color: #818384;
+      margin-bottom: 1.1rem;
+      line-height: 1.55;
+    }
+
+    /* Summary row of OCR facts */
+    .fixture-facts {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+      padding: 0.9rem 1rem;
+      background: #121213;
+      border-radius: 8px;
+      border: 1px solid #2a2a2c;
+    }
+    .fixture-fact { display: flex; flex-direction: column; gap: 0.2rem; }
+    .fixture-fact .fact-label {
+      font-size: 0.62rem;
+      color: #818384;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .fixture-fact .fact-value {
+      font-size: 0.88rem;
+      color: #d7dadc;
+      font-weight: 600;
+      font-family: monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .fact-value.highlight { color: #538d4e; }
+
+    /* Mini Wordle grid inside fact summary */
+    .mini-grid-row { display: flex; gap: 3px; margin-bottom: 3px; }
+    .mini-tile-sm {
+      width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.62rem; color: #fff;
+      border-radius: 3px;
+    }
+
+    /* Filename input row */
+    .fixture-name-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.9rem;
+    }
+    .fixture-name-row label {
+      font-size: 0.83rem;
+      color: #d7dadc;
+      white-space: nowrap;
+    }
+    #fixture-name {
+      flex: 1;
+      min-width: 200px;
+      max-width: 340px;
+      background: #121213;
+      border: 1px solid #3a3a3c;
+      border-radius: 7px;
+      color: #d7dadc;
+      font-size: 0.88rem;
+      font-family: monospace;
+      padding: 0.45rem 0.75rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #fixture-name:focus { border-color: #538d4e; }
+    #fixture-name.invalid { border-color: #b91c1c; }
+    .name-hint {
+      font-size: 0.72rem;
+      color: #818384;
+      margin-top: 0.2rem;
+      margin-bottom: 0.9rem;
+    }
+
+    #add-fixture-btn {
+      background: #538d4e;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 0.55rem 1.5rem;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    #add-fixture-btn:hover:not(:disabled) { background: #6aad65; }
+    #add-fixture-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .small-spinner {
+      display: inline-block;
+      width: 13px; height: 13px;
+      border: 2px solid #3a3a3c;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.35rem;
+    }
+
+    #fixture-status { margin-top: 0.85rem; font-size: 0.85rem; line-height: 1.5; }
+    #fixture-status.ok  { color: #6aad65; }
+    #fixture-status.bad { color: #f87171; }
+
+    .fixture-entry-box {
+      margin-top: 0.8rem;
+      background: #0d0d0e;
+      border: 1px solid #2a2a2c;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      font-family: monospace;
+      font-size: 0.72rem;
+      color: #818384;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .fixture-entry-box-label {
+      font-size: 0.65rem;
+      color: #818384;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.3rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Wordle Helper</h1>
+    <p class="subtitle">Verify OCR on a screenshot and add it to the regression suite</p>
+    <div class="nav-links">
+      <a href="index.html">← helper</a>
+      <a href="tests.html">regression tests</a>
+    </div>
+  </header>
+
+  <!-- ── Upload / paste zone ─────────────────────────────────────────────── -->
+  <div id="dropzone" role="button" tabindex="0"
+       aria-label="Click, drag-and-drop, or paste a Wordle screenshot">
+    <span class="icon">📋</span>
+    <p class="primary">Paste your Wordle screenshot</p>
+    <p class="secondary">
+      Press <kbd>Ctrl+V</kbd> / <kbd>⌘V</kbd> anywhere on this page<br>
+      or drag &amp; drop an image here, or click to browse
+    </p>
+    <p class="secondary" style="margin-top:0.6rem;color:#b59f3b;font-size:0.78rem;">
+      ⚠ Must be a <strong>digital screenshot</strong> — not a photo of the screen.
+    </p>
+  </div>
+  <input type="file" id="file-input" accept="image/*" />
+
+  <!-- ── Image preview ────────────────────────────────────────────────────── -->
+  <div id="preview-section">
+    <img id="preview-img" alt="Wordle screenshot preview" />
+    <div class="image-actions">
+      <span id="reselect-btn">Choose a different image</span>
+      <span class="action-sep">·</span>
+      <span id="paste-new-btn">Paste new image <kbd>⌘V</kbd>/<kbd>Ctrl+V</kbd></span>
+    </div>
+    <div id="paste-toast">Ready — press ⌘V or Ctrl+V to paste</div>
+  </div>
+
+  <!-- ── Spinner ──────────────────────────────────────────────────────────── -->
+  <div id="spinner">
+    <div class="spinner-ring"></div>
+    <p>Analysing screenshot&hellip; this may take up to 30 seconds</p>
+  </div>
+
+  <!-- ── Error ────────────────────────────────────────────────────────────── -->
+  <div id="error-box"></div>
+
+  <!-- ── OCR Results ──────────────────────────────────────────────────────── -->
+  <div id="results">
+
+    <section>
+      <h2>Identified Guesses</h2>
+      <div id="guesses-display"></div>
+    </section>
+
+    <section>
+      <h2>Best Next Guess</h2>
+      <div class="best-cards">
+        <div class="best-card">
+          <div class="label">Best Overall</div>
+          <div class="word" id="best-overall-word">—</div>
+          <div class="meta" id="best-overall-meta"></div>
+        </div>
+        <div class="best-card">
+          <div class="label">Best Valid Candidate</div>
+          <div class="word" id="best-valid-word">—</div>
+          <div class="meta" id="best-valid-meta"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Top Suggestions</h2>
+      <div class="table-wrap">
+        <table class="suggestions-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Word</th><th>Entropy (bits)</th><th>Adjusted</th><th>Candidate?</th>
+            </tr>
+          </thead>
+          <tbody id="suggestions-body"></tbody>
+        </table>
+      </div>
+      <p id="bonus-note" style="margin-top:.6rem;font-size:.75rem;color:#818384;"></p>
+    </section>
+
+    <section>
+      <h2>Remaining Candidates</h2>
+      <p id="candidate-count"></p>
+      <div id="candidates-list"></div>
+    </section>
+
+  </div><!-- #results -->
+
+  <!-- ── Add-to-Regression card ───────────────────────────────────────────── -->
+  <div id="fixture-section">
+    <h2>Save as Regression Fixture</h2>
+
+    <p class="fixture-intro">
+      Review the identified board above. If the letters and colours are correct,
+      choose a filename and add this image to the regression suite.
+    </p>
+
+    <!-- compact OCR summary with mini grid + key numbers -->
+    <div class="fixture-facts" id="fixture-facts"></div>
+
+    <!-- filename input -->
+    <div class="fixture-name-row">
+      <label for="fixture-name">Filename</label>
+      <input type="text" id="fixture-name" spellcheck="false"
+             placeholder="my_game.png" />
+    </div>
+    <p class="name-hint">Letters, digits, underscores, hyphens — must end in .png, .jpg, or .jpeg</p>
+
+    <button id="add-fixture-btn">+ Add to Regression Suite</button>
+
+    <div id="fixture-status"></div>
+  </div>
+
+  <script>
+    const API_URL = "https://wordle-assistant-production-6f2c.up.railway.app";
+
+    // ── DOM refs ────────────────────────────────────────────────────────────
+    const dropzone    = document.getElementById("dropzone");
+    const fileInput   = document.getElementById("file-input");
+    const previewSec  = document.getElementById("preview-section");
+    const previewImg  = document.getElementById("preview-img");
+    const reselectBtn = document.getElementById("reselect-btn");
+    const spinner     = document.getElementById("spinner");
+    const errorBox    = document.getElementById("error-box");
+    const resultsEl   = document.getElementById("results");
+    const fixtureSec  = document.getElementById("fixture-section");
+    const addBtn      = document.getElementById("add-fixture-btn");
+    const statusEl    = document.getElementById("fixture-status");
+    const nameInput   = document.getElementById("fixture-name");
+
+    // ── State ───────────────────────────────────────────────────────────────
+    let currentFile       = null;   // the File the user uploaded
+    let lastAnalysisData  = null;   // response from /analyze
+
+    // ── Upload interactions ─────────────────────────────────────────────────
+    dropzone.addEventListener("click",   () => fileInput.click());
+    dropzone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") fileInput.click();
+    });
+    reselectBtn.addEventListener("click", () => fileInput.click());
+
+    const pasteNewBtn = document.getElementById("paste-new-btn");
+    const pasteToast  = document.getElementById("paste-toast");
+    let pasteToastTimer = null;
+    pasteNewBtn.addEventListener("click", () => {
+      pasteToast.classList.add("visible");
+      clearTimeout(pasteToastTimer);
+      pasteToastTimer = setTimeout(() => pasteToast.classList.remove("visible"), 2500);
+    });
+
+    dropzone.addEventListener("dragover",  (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); });
+    dropzone.addEventListener("dragleave", ()  => dropzone.classList.remove("drag-over"));
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith("image/")) processFile(file);
+    });
+    fileInput.addEventListener("change", () => { if (fileInput.files[0]) processFile(fileInput.files[0]); });
+    document.addEventListener("paste", (e) => {
+      const imgItem = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
+      if (imgItem) processFile(imgItem.getAsFile());
+    });
+
+    // ── Core: upload + analyse ──────────────────────────────────────────────
+    function processFile(file) {
+      currentFile = file;
+
+      // preview
+      const url = URL.createObjectURL(file);
+      previewImg.src = url;
+      previewImg.onload = () => URL.revokeObjectURL(url);
+      previewSec.style.display = "block";
+      dropzone.style.display   = "none";
+
+      // reset
+      errorBox.style.display   = "none";
+      resultsEl.style.display  = "none";
+      fixtureSec.style.display = "none";
+      statusEl.className       = "";
+      statusEl.innerHTML       = "";
+      addBtn.disabled          = false;
+      addBtn.textContent       = "+ Add to Regression Suite";
+      spinner.style.display    = "flex";
+
+      const form = new FormData();
+      form.append("image", file);
+
+      fetch(`${API_URL}/analyze`, { method: "POST", body: form })
+        .then((res) => {
+          if (!res.ok) return res.json().then((j) => { throw new Error(j.detail || `Server error ${res.status}`); });
+          return res.json();
+        })
+        .then(renderResults)
+        .catch((err) => {
+          spinner.style.display    = "none";
+          errorBox.textContent     = `⚠ ${err.message}`;
+          errorBox.style.display   = "block";
+          dropzone.style.display   = "block";
+          previewSec.style.display = "none";
+        });
+    }
+
+    // ── Render OCR results ──────────────────────────────────────────────────
+    const CODE_TO_COLOR = { g: "#538d4e", y: "#b59f3b", b: "#3a3a3c" };
+
+    function renderResults(data) {
+      lastAnalysisData = data;
+      spinner.style.display = "none";
+
+      // OCR warning
+      const existingWarn = document.getElementById("ocr-warning");
+      if (existingWarn) existingWarn.remove();
+      if (data.ocr_warning) {
+        const warn = document.createElement("div");
+        warn.id = "ocr-warning";
+        warn.style.cssText = "background:#b59f3b;color:#fff;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:0.9rem;";
+        warn.textContent = "⚠ " + data.ocr_warning;
+        resultsEl.prepend(warn);
+      }
+
+      // 1. Guess tiles
+      const guessesDiv = document.getElementById("guesses-display");
+      guessesDiv.innerHTML = "";
+      for (const guess of data.guesses) {
+        const row = document.createElement("div");
+        row.className = "guess-row";
+        for (const tile of guess.tiles) {
+          const t = document.createElement("div");
+          t.className = `tile ${tile.color === "unknown" ? "unknown" : tile.color}`;
+          t.textContent = tile.letter || "?";
+          t.title = `${tile.letter} — ${tile.color}`;
+          row.appendChild(t);
+        }
+        guessesDiv.appendChild(row);
+      }
+
+      // 2. Best-guess cards
+      function fillCard(wordId, metaId, obj) {
+        document.getElementById(wordId).textContent = obj ? obj.word.toUpperCase() : "—";
+        document.getElementById(metaId).textContent = obj ? `entropy ${obj.raw} → adjusted ${obj.adjusted}` : "";
+      }
+      fillCard("best-overall-word", "best-overall-meta", data.best_overall);
+      fillCard("best-valid-word",   "best-valid-meta",   data.best_valid);
+
+      // 3. Suggestions table
+      const tbody = document.getElementById("suggestions-body");
+      tbody.innerHTML = "";
+      (data.top_suggestions || []).forEach((s, i) => {
+        const tr = document.createElement("tr");
+        if (i === 0) tr.classList.add("rank-1");
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td class="word-cell">${s.word}</td>
+          <td>${s.raw_entropy}</td>
+          <td>${s.adjusted_entropy}</td>
+          <td>${s.is_candidate ? '<span class="candidate-badge">✓ Yes</span>' : ""}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      const bonusNote = document.getElementById("bonus-note");
+      bonusNote.textContent = (data.bonus && data.candidate_count > 1)
+        ? `Valid candidates receive a +${data.bonus} bit bonus ((1/N)·log₂(N), N=${data.candidate_count}) in the adjusted score.`
+        : "";
+
+      // 4. Candidates
+      const countP  = document.getElementById("candidate-count");
+      const listDiv = document.getElementById("candidates-list");
+      const n = data.candidate_count || 0;
+      countP.textContent = `${n} word${n !== 1 ? "s" : ""} remain`;
+      listDiv.innerHTML = "";
+      if (n === 0) {
+        const p = document.createElement("p");
+        p.className = "notice";
+        p.textContent = "No words match the current constraints.";
+        listDiv.appendChild(p);
+      } else {
+        for (const word of (data.candidates || [])) {
+          const pill = document.createElement("span");
+          pill.className = "candidate-pill";
+          pill.textContent = word.toUpperCase();
+          listDiv.appendChild(pill);
+        }
+      }
+
+      resultsEl.style.display = "block";
+      resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      // Show the fixture section below results
+      showFixtureSection(data);
+    }
+
+    // ── Fixture section ─────────────────────────────────────────────────────
+    function showFixtureSection(data) {
+      // Pre-populate filename with today's date
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, "_");
+      nameInput.value = `wordle_${today}.png`;
+      nameInput.classList.remove("invalid");
+
+      // Build mini-grid summary
+      const factsEl = document.getElementById("fixture-facts");
+      factsEl.innerHTML = "";
+
+      // Mini grid fact
+      const gridFact = document.createElement("div");
+      gridFact.className = "fixture-fact";
+      const gridLabel = document.createElement("div");
+      gridLabel.className = "fact-label";
+      gridLabel.textContent = "Identified board";
+      gridFact.appendChild(gridLabel);
+      const gridVal = document.createElement("div");
+      if (data.guesses.length === 0) {
+        gridVal.style.cssText = "font-size:0.8rem;color:#818384;font-style:italic;margin-top:0.2rem;";
+        gridVal.textContent = "Blank board";
+      } else {
+        for (const guess of data.guesses) {
+          const rowEl = document.createElement("div");
+          rowEl.className = "mini-grid-row";
+          for (const tile of guess.tiles) {
+            const tEl = document.createElement("div");
+            tEl.className = "mini-tile-sm";
+            const code = { green: "g", yellow: "y", black: "b" }[tile.color] || "b";
+            tEl.style.background = CODE_TO_COLOR[code] || CODE_TO_COLOR.b;
+            tEl.textContent = (tile.letter || "?").toUpperCase();
+            tEl.title = `${tile.letter} — ${tile.color}`;
+            rowEl.appendChild(tEl);
+          }
+          gridVal.appendChild(rowEl);
+        }
+      }
+      gridFact.appendChild(gridVal);
+      factsEl.appendChild(gridFact);
+
+      // Candidates fact
+      const candFact = document.createElement("div");
+      candFact.className = "fixture-fact";
+      candFact.innerHTML =
+        `<div class="fact-label">Candidates left</div>` +
+        `<div class="fact-value">${data.candidate_count}</div>`;
+      factsEl.appendChild(candFact);
+
+      // Best next guess fact
+      const bestWord = (data.best_valid || data.best_overall);
+      if (bestWord) {
+        const bestFact = document.createElement("div");
+        bestFact.className = "fixture-fact";
+        bestFact.innerHTML =
+          `<div class="fact-label">Best suggestion</div>` +
+          `<div class="fact-value highlight">${bestWord.word.toUpperCase()}</div>`;
+        factsEl.appendChild(bestFact);
+      }
+
+      fixtureSec.style.display = "block";
+      // Small delay so results render first, then scroll to fixture section
+      setTimeout(() => fixtureSec.scrollIntoView({ behavior: "smooth", block: "nearest" }), 400);
+    }
+
+    // ── Add to regression ───────────────────────────────────────────────────
+    addBtn.addEventListener("click", async () => {
+      const filename = nameInput.value.trim();
+
+      // Client-side validation
+      if (!/^[A-Za-z0-9_\-]+\.(png|jpg|jpeg)$/i.test(filename)) {
+        nameInput.classList.add("invalid");
+        statusEl.className = "bad";
+        statusEl.textContent = "⚠ Filename must be letters/digits/underscores/hyphens and end in .png, .jpg, or .jpeg";
+        return;
+      }
+      nameInput.classList.remove("invalid");
+
+      if (!currentFile) {
+        statusEl.className = "bad";
+        statusEl.textContent = "⚠ No image loaded.";
+        return;
+      }
+
+      addBtn.disabled = true;
+      statusEl.className = "";
+      statusEl.innerHTML = `<span class="small-spinner"></span> Saving fixture to server…`;
+
+      try {
+        const form = new FormData();
+        form.append("image", currentFile);
+        form.append("filename", filename);
+
+        const resp = await fetch(`${API_URL}/tests/add-fixture`, {
+          method: "POST",
+          body: form,
+        });
+
+        if (!resp.ok) {
+          const j = await resp.json().catch(() => ({ detail: resp.statusText }));
+          throw new Error(j.detail || `HTTP ${resp.status}`);
+        }
+
+        const result = await resp.json();
+        const verb   = result.status === "updated" ? "updated" : "added";
+        const entry  = result.entry;
+
+        addBtn.textContent = `✓ ${verb === "updated" ? "Updated" : "Added"}`;
+
+        statusEl.className = "ok";
+        statusEl.innerHTML =
+          `✓ <strong>${escHtml(filename)}</strong> ${verb} to the regression suite. ` +
+          `<a href="tests.html" style="color:#6aad65;text-decoration:underline;">Run tests →</a><br>` +
+          `<span style="color:#818384;font-size:0.78rem;">` +
+          `To persist across deployments, commit the image and expected.json to git.</span>`;
+
+        // Show the expected.json snippet the user can copy
+        const snippet = { [filename]: entry };
+        const entryBox = document.createElement("div");
+        entryBox.style.marginTop = "0.8rem";
+        const lbl = document.createElement("div");
+        lbl.className = "fixture-entry-box-label";
+        lbl.textContent = "expected.json entry (copy to commit locally)";
+        const pre = document.createElement("pre");
+        pre.className = "fixture-entry-box";
+        pre.textContent = JSON.stringify(snippet, null, 2);
+        entryBox.appendChild(lbl);
+        entryBox.appendChild(pre);
+        statusEl.appendChild(entryBox);
+
+      } catch (err) {
+        statusEl.className = "bad";
+        statusEl.textContent = `⚠ ${err.message}`;
+        addBtn.disabled = false;
+      }
+    });
+
+    function escHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
+
+</body>
+</html>
