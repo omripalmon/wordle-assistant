@@ -1,0 +1,104 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PROMOTE to confirm"
+        required: true
+        default: ""
+
+# GITHUB_TOKEN must have contents:write so the fast-forward push to the
+# production branch succeeds.  Verify in repo Settings → Actions → General →
+# Workflow permissions that "Read and write permissions" is selected.
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Full test gate → fast-forward production
+    runs-on: ubuntu-latest
+
+    # Guard: abort immediately if the confirmation word is wrong.
+    # This prevents accidental or automated triggers from promoting to production.
+    if: ${{ github.event.inputs.confirm == 'PROMOTE' }}
+
+    steps:
+      - name: Checkout main (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0   # full history required for fast-forward push
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+
+      - name: Set TESSDATA_PREFIX (version-agnostic)
+        run: |
+          V=$(tesseract --version 2>&1 | grep -oP '(?<=tesseract )\d+')
+          echo "TESSDATA_PREFIX=/usr/share/tesseract-ocr/${V}/tessdata" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: pip install -r api/requirements.txt
+
+      - name: Run FULL test suite (in-process)
+        # All test files, including the slow test_analyze_api.py which runs
+        # entropy scoring via FastAPI TestClient for every fixture image.
+        run: |
+          pytest \
+            test_wordle_filter.py \
+            test_main.py \
+            test_prime_api.py \
+            test_optimal_guess.py \
+            test_wordle_image.py \
+            test_analyze_api.py \
+            -v --tb=short
+
+      - name: Smoke test live Railway staging
+        # Verifies the actual deployed Docker container (Tesseract 5, correct env)
+        # catches environment differences the in-process tests cannot detect.
+        env:
+          STAGING_URL: ${{ secrets.RAILWAY_STAGING_URL }}
+        run: |
+          python - <<'EOF'
+          import httpx, os, sys
+
+          url = os.environ["STAGING_URL"].rstrip("/")
+
+          # 1. Health check
+          r = httpx.get(f"{url}/health", timeout=15)
+          assert r.status_code == 200, f"Health check failed ({r.status_code}): {r.text}"
+          print(f"✓ Health check passed: {r.json()}")
+
+          # 2. Analyse one fixture image end-to-end
+          fixture = "tests/fixtures/smelt_v1.png"
+          with open(fixture, "rb") as f:
+              r = httpx.post(
+                  f"{url}/analyze",
+                  files={"image": ("smelt_v1.png", f, "image/png")},
+                  timeout=120,
+              )
+          assert r.status_code == 200, f"/analyze failed ({r.status_code}): {r.text[:300]}"
+          data = r.json()
+          assert data["candidate_count"] > 0, (
+              f"Expected nonzero candidates from staging, got {data['candidate_count']}"
+          )
+          print(f"✓ Staging /analyze passed (candidates={data['candidate_count']})")
+          EOF
+
+      # Only reached if every step above succeeded.
+      - name: Fast-forward production ← main
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git push origin HEAD:production
+          echo "✓ production branch updated — Railway will redeploy automatically"

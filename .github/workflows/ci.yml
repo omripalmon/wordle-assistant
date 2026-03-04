@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Fast test gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+
+      - name: Set TESSDATA_PREFIX (version-agnostic)
+        # ubuntu-latest ships Tesseract 4 via apt; the Docker image uses Tesseract 5.
+        # Detect the installed major version so the path is always correct.
+        run: |
+          V=$(tesseract --version 2>&1 | grep -oP '(?<=tesseract )\d+')
+          echo "TESSDATA_PREFIX=/usr/share/tesseract-ocr/${V}/tessdata" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: pip install -r api/requirements.txt
+
+      - name: Run fast test suite
+        # test_analyze_api.py is intentionally excluded here — it runs entropy
+        # scoring across all fixtures (~5-15 min) and belongs only in promote.yml.
+        run: |
+          pytest \
+            test_wordle_filter.py \
+            test_main.py \
+            test_prime_api.py \
+            test_optimal_guess.py \
+            test_wordle_image.py \
+            -v --tb=short
