@@ -213,6 +213,42 @@ def test_could_o_read_correctly() -> None:
     )
 
 
+@REQUIRES_TESSERACT
+def test_cruet_c_read_correctly() -> None:
+    """Regression: bold 'C' in CRUET misread as 'O' by Tesseract on web service.
+
+    The web service (Linux Tesseract 5.x) returns 'O' for the grey absent C tile
+    in light mode.  The O→C correction (elif density < 0.60) must fire to recover
+    the correct letter.
+
+    Fixture: light-mode PNG generated to match the reported screenshot.
+    """
+    result = parse_wordle_image(_fixture("cruet_light.png"))
+    assert len(result) == 3, "cruet_light.png must have exactly 3 guesses"
+    word, resp = result[2]  # third guess is CRUET
+    assert resp == "bybyg", f"CRUET colour codes changed: '{resp}'"
+    assert word == "cruet", (
+        f"expected 'cruet', got '{word}' — C/O fix may have regressed"
+    )
+
+
+@REQUIRES_TESSERACT
+def test_crypt_c_read_correctly() -> None:
+    """Regression: bold 'C' in CRYPT misread as 'O' by Tesseract.
+
+    Fixed by extending the C/O disambiguation to also correct O→C when the
+    equatorial right-side pixel density is low (< 0.30), indicating an open
+    arc (C) rather than a closed ring (O).
+    """
+    result = parse_wordle_image(_fixture("wordle_2026_03_03.png"))
+    assert len(result) == 2, "wordle_2026_03_03.png must have exactly 2 guesses"
+    word, resp = result[1]  # second guess is CRYPT
+    assert resp == "bybbb", f"CRYPT colour codes changed: '{resp}'"
+    assert word == "crypt", (
+        f"expected 'crypt', got '{word}' — C/O fix may have regressed"
+    )
+
+
 def test_variant_images_produce_identical_results() -> None:
     """Two crops of the same game state must produce the same colour codes."""
     for base in ("smelt", "raise_ybbby", "raise_bybbb"):

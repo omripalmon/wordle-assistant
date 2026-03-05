@@ -852,9 +852,12 @@ def _ocr_tile_letter(
     # padded image height).  That narrow band captures the gap of C but the
     # solid arc of O.
     #
-    # Measured densities (equatorial, right-25 %):
-    #   O ≈ 0.97,  C ≈ 0.00  →  threshold 0.30 gives ample margin.
-    if tess_letter == "C" and stroke_cols:
+    # Measured densities (equatorial, right-25 %) across all fixtures:
+    #   Real O (misread as C):  0.95   →  should be corrected to O
+    #   Real C (various fonts): 0.21 – 0.40  →  should stay as C
+    #   Threshold 0.60 gives comfortable margin between the two clusters.
+    #   Also covers the reverse: O misread as O but equatorial gap exposed.
+    if tess_letter in ("C", "O") and stroke_cols:
         _co_right = stroke_cols[-1]
         _co_lw    = _co_right - stroke_cols[0] + 1    # letter width in px
         _co_r0    = int(_co_right - _co_lw * 0.25)    # rightmost 25 % of letter
@@ -867,8 +870,12 @@ def _ocr_tile_letter(
                 _co_total += 1
                 if bw_pixels[_row * bw_w + _col] < 128:
                     _co_dark += 1
-        if _co_total > 0 and _co_dark / _co_total > 0.30:
-            tess_letter = "O"
+        if _co_total > 0:
+            _co_density = _co_dark / _co_total
+            if tess_letter == "C" and _co_density > 0.60:
+                tess_letter = "O"
+            elif tess_letter == "O" and _co_density < 0.60:
+                tess_letter = "C"
 
     # 6d. F ↔ E disambiguation.
     # Cloud Tesseract 5.x sometimes misreads the bold Wordle 'F' as 'E'.

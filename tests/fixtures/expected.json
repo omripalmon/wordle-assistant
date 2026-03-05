@@ -172,5 +172,26 @@
     "candidate_count": 4,
     "best_overall_word": "quirk",
     "best_valid_word": "quirk"
+  },
+  "cruet_light.png": {
+    "guess_count": 3,
+    "responses": [
+      "ybbby",
+      "bybyb",
+      "bybyg"
+    ],
+    "words": [
+      "raise",
+      "deter",
+      "cruet"
+    ],
+    "word_ocr_reliable": [
+      true,
+      true,
+      true
+    ],
+    "candidate_count": null,
+    "best_overall_word": null,
+    "best_valid_word": null
   }
 }
