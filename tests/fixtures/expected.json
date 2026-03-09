@@ -190,8 +190,8 @@
       true,
       true
     ],
-    "candidate_count": null,
-    "best_overall_word": null,
-    "best_valid_word": null
+    "candidate_count": 1,
+    "best_overall_word": "overt",
+    "best_valid_word": "overt"
   }
 }

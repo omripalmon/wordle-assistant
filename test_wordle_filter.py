@@ -68,8 +68,8 @@ def test_filter_excluded_positions_letter_present_not_at_position():
 
 def test_filter_excluded_positions_letter_missing_from_word():
     words = ["hello", "world"]
-    # 'r' must be in the word but not at position 0
-    result = filter_words(words, excluded_positions={"r": {0}})
+    # 'r' must be in the word (min_occurrences) AND not at position 0 (excluded_positions)
+    result = filter_words(words, excluded_positions={"r": {0}}, min_occurrences={"r": 1})
     assert result == ["world"]
 
 
