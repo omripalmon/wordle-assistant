@@ -855,15 +855,20 @@ def _ocr_tile_letter(
     # Measured densities (equatorial, right-25 %) across all fixtures:
     #   Real O (misread as C):  0.95   →  should be corrected to O
     #   Real C (various fonts): 0.21 – 0.40  →  should stay as C
-    #   Threshold 0.60 gives comfortable margin between the two clusters.
-    #   Also covers the reverse: O misread as O but equatorial gap exposed.
+    #   Threshold 0.80 for C→O (was 0.60): Linux/Docker LANCZOS resampling
+    #   produces slightly more blur at C's right opening, pushing density into
+    #   the 0.60–0.75 range for genuine C tiles on deployed Railway.  Real O
+    #   measures 0.90+ so 0.80 still gives a clear gap.
+    #   Threshold 0.60 kept for O→C: unchanged, gives ample separation.
+    #   Equatorial band widened to 38–62 % (was 42–58 %) for a larger, more
+    #   stable sample that is less sensitive to per-pixel rendering differences.
     if tess_letter in ("C", "O") and stroke_cols:
         _co_right = stroke_cols[-1]
         _co_lw    = _co_right - stroke_cols[0] + 1    # letter width in px
         _co_r0    = int(_co_right - _co_lw * 0.25)    # rightmost 25 % of letter
         _co_r1    = _co_right + 1
-        _co_m0    = int(bw_h * 0.42)                  # equatorial band start
-        _co_m1    = int(bw_h * 0.58)                  # equatorial band end
+        _co_m0    = int(bw_h * 0.38)                  # equatorial band start (widened)
+        _co_m1    = int(bw_h * 0.62)                  # equatorial band end   (widened)
         _co_dark = _co_total = 0
         for _row in range(_co_m0, _co_m1):
             for _col in range(_co_r0, _co_r1):
@@ -872,7 +877,7 @@ def _ocr_tile_letter(
                     _co_dark += 1
         if _co_total > 0:
             _co_density = _co_dark / _co_total
-            if tess_letter == "C" and _co_density > 0.60:
+            if tess_letter == "C" and _co_density > 0.80:   # stricter: was 0.60
                 tess_letter = "O"
             elif tess_letter == "O" and _co_density < 0.60:
                 tess_letter = "C"

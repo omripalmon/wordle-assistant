@@ -246,7 +246,7 @@ async def diagnose(image: UploadFile = File(...)) -> dict[str, Any]:
 
         rows_out = []
         reference_cols = None
-        for row_i, (top, bottom) in enumerate(tile_rows[:2]):  # only first 2 played rows
+        for row_i, (top, bottom) in enumerate(tile_rows):  # all played rows
             cols = _find_tile_cols(img, top, bottom, reference_cols=reference_cols)
             if len(cols) == 5:
                 reference_cols = cols

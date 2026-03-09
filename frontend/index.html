@@ -345,9 +345,9 @@
 
   <script>
     // ── API URL ─────────────────────────────────────────────────────────────
-    // Replace the string below with your Railway service URL after deployment.
-    // Example: "https://wordle-helper-api.up.railway.app"
-    const API_URL = "https://wordle-assistant-production-6f2c.up.railway.app";
+    // Injected at build time by build.sh from the RAILWAY_API_URL env var.
+    // In development, set RAILWAY_API_URL before running build.sh.
+    const API_URL = "__RAILWAY_API_URL__";
 
     // ── DOM refs ────────────────────────────────────────────────────────────
     const dropzone    = document.getElementById("dropzone");

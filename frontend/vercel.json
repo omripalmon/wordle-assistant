@@ -1,4 +1,6 @@
 {
+  "buildCommand": "bash build.sh",
+  "outputDirectory": ".",
   "rewrites": [
     {
       "source": "/((?!index\\.html|tests\\.html|test_image\\.html|fixtures\\.html).*)",
