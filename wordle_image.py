@@ -877,10 +877,14 @@ def _ocr_tile_letter(
                     _co_dark += 1
         if _co_total > 0:
             _co_density = _co_dark / _co_total
-            if tess_letter == "C" and _co_density > 0.80:   # stricter: was 0.60
-                tess_letter = "O"
-            elif tess_letter == "O" and _co_density < 0.60:
-                tess_letter = "C"
+            # Density-based final decision — ignores Tesseract's C/O reading
+            # entirely so the result is the same regardless of which letter
+            # Tesseract returned first.
+            #   Real O: density ≥ 0.85  →  "O"
+            #   Real C: density < 0.80  →  "C"  (even if Tesseract said "O")
+            # The gap between 0.75 (Docker C upper bound) and 0.90 (O lower
+            # bound) is wide enough that 0.80 cleanly separates them.
+            tess_letter = "O" if _co_density >= 0.80 else "C"
 
     # 6d. F ↔ E disambiguation.
     # Cloud Tesseract 5.x sometimes misreads the bold Wordle 'F' as 'E'.
