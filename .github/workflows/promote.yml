@@ -73,6 +73,8 @@ jobs:
           import httpx, os, sys
 
           url = os.environ["STAGING_URL"].rstrip("/")
+          if not url.startswith("http"):
+              url = "https://" + url
 
           # 1. Health check
           r = httpx.get(f"{url}/health", timeout=15)
