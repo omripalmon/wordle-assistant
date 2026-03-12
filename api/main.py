@@ -43,7 +43,7 @@ from pydantic import BaseModel
 
 from main import parse_guesses
 from optimal_guess import score_guess, valid_word_bonus
-from wordle_filter import filter_words, load_words
+from wordle_filter import filter_words, load_nyt_wordlists
 from wordle_image import parse_wordle_image
 
 # ---------------------------------------------------------------------------
@@ -120,21 +120,14 @@ async def _gh_commit_file(
 # ---------------------------------------------------------------------------
 # Word list — loaded once at startup to avoid per-request disk I/O
 # ---------------------------------------------------------------------------
-_WORDLIST_CANDIDATES = [
-    ROOT / "wordlist.txt",          # bundled curated list (preferred)
-    Path("/app/wordlist.txt"),       # Docker WORKDIR path
-    Path("/usr/share/dict/words"),   # OS fallback
-]
-_wordlist_path = next(
-    (p for p in _WORDLIST_CANDIDATES if p.exists()), None
-)
-if _wordlist_path is None:
+try:
+    RAW_WORDS, _ = load_nyt_wordlists()
+except FileNotFoundError as exc:
     raise RuntimeError(
-        "No word list found. Expected wordlist.txt in the project root or "
-        "/usr/share/dict/words on the system."
-    )
+        f"NYT word lists not found: {exc}. "
+        "Ensure wordle-answers.txt is present in the project root."
+    ) from exc
 
-RAW_WORDS: list[str] = load_words(str(_wordlist_path))
 WORD_SET: set[str] = set(RAW_WORDS)
 
 # ---------------------------------------------------------------------------

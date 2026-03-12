@@ -19,11 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Application source ───────────────────────────────────────────────────────
 # Shared Python modules from the repo root
-COPY wordle_filter.py  ./wordle_filter.py
-COPY wordle_image.py   ./wordle_image.py
-COPY optimal_guess.py  ./optimal_guess.py
-COPY main.py           ./main.py
-COPY wordlist.txt      ./wordlist.txt
+COPY wordle_filter.py         ./wordle_filter.py
+COPY wordle_image.py          ./wordle_image.py
+COPY optimal_guess.py         ./optimal_guess.py
+COPY main.py                  ./main.py
+COPY wordle-answers.txt       ./wordle-answers.txt
+COPY wordle-allowed-guesses.txt ./wordle-allowed-guesses.txt
 
 # Test suite and fixtures
 COPY conftest.py           ./conftest.py
