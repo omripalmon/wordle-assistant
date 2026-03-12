@@ -4,9 +4,9 @@
     "responses": [],
     "words": [],
     "word_ocr_reliable": [],
-    "candidate_count": 8506,
-    "best_overall_word": "tarie",
-    "best_valid_word": "tarie"
+    "candidate_count": 2315,
+    "best_overall_word": "raise",
+    "best_valid_word": "raise"
   },
   "smelt_v1.png": {
     "guess_count": 1,
@@ -19,7 +19,7 @@
     "word_ocr_reliable": [
       true
     ],
-    "candidate_count": 4,
+    "candidate_count": 3,
     "best_overall_word": "dealt",
     "best_valid_word": "dealt"
   },
@@ -34,7 +34,7 @@
     "word_ocr_reliable": [
       true
     ],
-    "candidate_count": 4,
+    "candidate_count": 3,
     "best_overall_word": "dealt",
     "best_valid_word": "dealt"
   },
@@ -49,7 +49,7 @@
     "word_ocr_reliable": [
       true
     ],
-    "candidate_count": 312,
+    "candidate_count": 102,
     "best_overall_word": "deter",
     "best_valid_word": "deter"
   },
@@ -64,7 +64,7 @@
     "word_ocr_reliable": [
       true
     ],
-    "candidate_count": 312,
+    "candidate_count": 102,
     "best_overall_word": "deter",
     "best_valid_word": "deter"
   },
@@ -82,9 +82,9 @@
       true,
       true
     ],
-    "candidate_count": 6,
-    "best_overall_word": "alamo",
-    "best_valid_word": "algic"
+    "candidate_count": 1,
+    "best_overall_word": "attic",
+    "best_valid_word": "attic"
   },
   "raise_bybbb_v1.png": {
     "guess_count": 1,
@@ -97,9 +97,9 @@
     "word_ocr_reliable": [
       true
     ],
-    "candidate_count": 530,
-    "best_overall_word": "tolan",
-    "best_valid_word": "tolan"
+    "candidate_count": 92,
+    "best_overall_word": "clout",
+    "best_valid_word": "float"
   },
   "raise_bybbb_v2.png": {
     "guess_count": 1,
@@ -112,9 +112,9 @@
     "word_ocr_reliable": [
       true
     ],
-    "candidate_count": 530,
-    "best_overall_word": "tolan",
-    "best_valid_word": "tolan"
+    "candidate_count": 92,
+    "best_overall_word": "clout",
+    "best_valid_word": "float"
   },
   "raise_could.png": {
     "guess_count": 2,
@@ -130,9 +130,9 @@
       true,
       true
     ],
-    "candidate_count": 6,
-    "best_overall_word": "flume",
-    "best_valid_word": "flume"
+    "candidate_count": 4,
+    "best_overall_word": "empty",
+    "best_valid_word": "fluke"
   },
   "raise_could_flume.png": {
     "guess_count": 3,
@@ -169,7 +169,7 @@
       true,
       true
     ],
-    "candidate_count": 4,
+    "candidate_count": 2,
     "best_overall_word": "quirk",
     "best_valid_word": "quirk"
   },
