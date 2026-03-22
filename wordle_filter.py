@@ -25,9 +25,9 @@ def load_nyt_wordlists(
     """Load the NYT Wordle word lists.
 
     Returns:
-        ``(answers, allowed_guesses)`` where *answers* are the ~2315 possible
-        answer words and *allowed_guesses* are the ~10 657 additional words
-        that are valid guesses but will never be the answer.
+        ``(answers, allowed_guesses)`` where *answers* are the ~14 855 valid
+        Wordle words (answers + guesses combined; NYT now selects answers
+        server-side) and *allowed_guesses* is an empty list.
     """
     ap = Path(answers_path) if answers_path else _NYT_ANSWERS
     gp = Path(guesses_path) if guesses_path else _NYT_GUESSES
