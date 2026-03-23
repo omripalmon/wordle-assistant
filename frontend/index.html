@@ -242,6 +242,27 @@
       color: #818384; font-size: 0.88rem;
       font-style: italic; padding: 0.5rem 0;
     }
+
+    /* ── Full-page drag overlay ───────────────────────────────────────────── */
+    #drag-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(83, 141, 78, 0.15);
+      border: 4px dashed #538d4e;
+      z-index: 9999;
+      pointer-events: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    #drag-overlay.active { display: flex; }
+    #drag-overlay .icon  { font-size: 4rem; }
+    #drag-overlay .label {
+      font-size: 1.2rem; font-weight: 700;
+      color: #538d4e; letter-spacing: 0.08em;
+    }
   </style>
 </head>
 <body>
@@ -289,6 +310,12 @@
   <div id="error-box"></div>
 
   <!-- ── Results ──────────────────────────────────────────────────────────── -->
+  <!-- ── Full-page drag overlay ───────────────────────────────────────────── -->
+  <div id="drag-overlay" aria-hidden="true">
+    <span class="icon">🖼️</span>
+    <span class="label">Drop image anywhere</span>
+  </div>
+
   <div id="results">
 
     <!-- Identified guesses with colour-coded tiles -->
@@ -375,14 +402,34 @@
       pasteToastTimer = setTimeout(() => pasteToast.classList.remove("visible"), 2500);
     });
 
-    // Drag and drop
-    dropzone.addEventListener("dragover", (e) => {
+    // ── Drag and drop (page-wide) ───────────────────────────────────────────
+    // Works whether the dropzone is visible or hidden (e.g. after a file is chosen).
+    const dragOverlay = document.getElementById("drag-overlay");
+    let dragCounter  = 0; // track nested dragenter/dragleave pairs
+
+    document.addEventListener("dragenter", (e) => {
       e.preventDefault();
-      dropzone.classList.add("drag-over");
+      if (++dragCounter === 1) {
+        dragOverlay.classList.add("active");
+        dropzone.classList.add("drag-over");
+      }
     });
-    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
-    dropzone.addEventListener("drop", (e) => {
+
+    document.addEventListener("dragover", (e) => {
+      e.preventDefault(); // required to allow drop
+    });
+
+    document.addEventListener("dragleave", () => {
+      if (--dragCounter === 0) {
+        dragOverlay.classList.remove("active");
+        dropzone.classList.remove("drag-over");
+      }
+    });
+
+    document.addEventListener("drop", (e) => {
       e.preventDefault();
+      dragCounter = 0;
+      dragOverlay.classList.remove("active");
       dropzone.classList.remove("drag-over");
       const file = e.dataTransfer.files[0];
       if (file && file.type.startsWith("image/")) processFile(file);
