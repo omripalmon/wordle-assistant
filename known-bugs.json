@@ -1,0 +1,4 @@
+{
+  "_comment": "List tests that are known to fail. Each entry needs 'test_id', 'reason', and optionally 'issue'. They will be marked xfail automatically — the CI will still report them but will not block promotion.",
+  "known_bugs": []
+}
