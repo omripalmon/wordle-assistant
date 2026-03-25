@@ -918,10 +918,17 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
         ]
         guess_args = [f"{word},{response}" for word, response in known_guesses]
 
-        # Check if the puzzle is already solved (any guess with all-green response)
-        solved_word: str | None = next(
-            (word for word, response in known_guesses if response == "ggggg"),
+        # Check if the puzzle is already solved (any guess with all-green response).
+        # Use raw_guesses so colour detection works even when OCR is unavailable
+        # and letters come back as '?????'.
+        solved_raw = next(
+            ((word, response) for word, response in raw_guesses if response == "ggggg"),
             None,
+        )
+        is_solved = solved_raw is not None
+        # Only expose the word if OCR actually read it (no '?' placeholders)
+        solved_word: str | None = (
+            solved_raw[0] if solved_raw and "?" not in solved_raw[0] else None
         )
 
         try:
@@ -1013,7 +1020,7 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
 
         return {
             "guesses": guesses_payload,
-            "solved": solved_word is not None,
+            "solved": is_solved,
             "solved_word": solved_word,
             "solved_in_dictionary": (solved_word in set(RAW_WORDS)) if solved_word else None,
             "candidates": candidates,
