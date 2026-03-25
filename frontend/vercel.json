@@ -2,8 +2,9 @@
   "buildCommand": "bash build.sh",
   "outputDirectory": ".",
   "rewrites": [
+    { "source": "/status", "destination": "/status.html" },
     {
-      "source": "/((?!index\\.html|tests\\.html|test_image\\.html|fixtures\\.html).*)",
+      "source": "/((?!index\\.html|tests\\.html|test_image\\.html|fixtures\\.html|status\\.html).*)",
       "destination": "/index.html"
     }
   ],

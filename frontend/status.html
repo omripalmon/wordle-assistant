@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wordle Assistant — Status</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: #121213;
+      color: #ffffff;
+      min-height: 100vh;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+    .subtitle { color: #818384; font-size: 0.78rem; margin-top: 0.25rem; }
+
+    #refresh-btn {
+      background: #2a2a2c;
+      border: 1px solid #3a3a3c;
+      color: #fff;
+      border-radius: 6px;
+      padding: 0.45rem 0.9rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #refresh-btn:hover { background: #3a3a3c; }
+    #refresh-btn.spinning .spin-icon { display: inline-block; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Section ── */
+    section { margin-bottom: 2rem; }
+    .section-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      color: #818384;
+      margin-bottom: 0.8rem;
+      border-bottom: 1px solid #2a2a2c;
+      padding-bottom: 0.35rem;
+    }
+
+    /* ── Version mismatch banner ── */
+    #version-banner {
+      display: none;
+      background: #2c1a00;
+      border: 1px solid #b59f3b;
+      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      color: #fde68a;
+      font-size: 0.82rem;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    #version-banner code {
+      font-family: monospace;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      padding: 0 4px;
+    }
+
+    /* ── Health cards ── */
+    .env-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+      gap: 0.75rem;
+    }
+    .env-card {
+      background: #1a1a1b;
+      border: 1px solid #2a2a2c;
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+    }
+    .env-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #818384;
+      margin-bottom: 0.55rem;
+    }
+    .status-row { display: flex; align-items: center; gap: 0.45rem; }
+    .dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.online   { background: #538d4e; }
+    .dot.offline  { background: #e53e3e; }
+    .dot.degraded { background: #b59f3b; }
+    .dot.unknown  { background: #3a3a3c; }
+    .dot.loading  { background: #3a3a3c; animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .status-text { font-size: 0.82rem; font-weight: 600; }
+    .status-text.online   { color: #538d4e; }
+    .status-text.offline  { color: #fc8181; }
+    .status-text.degraded { color: #fde68a; }
+    .status-text.unknown  { color: #818384; }
+    .env-meta { font-size: 0.68rem; color: #818384; margin-top: 0.35rem; line-height: 1.4; }
+    .env-card a.open-link {
+      display: inline-block;
+      margin-top: 0.55rem;
+      font-size: 0.72rem;
+      color: #538d4e;
+      text-decoration: none;
+    }
+    .env-card a.open-link:hover { text-decoration: underline; }
+    .env-card a.open-link.hidden { display: none; }
+
+    /* ── Links grid ── */
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.65rem;
+    }
+    .link-card {
+      background: #1a1a1b;
+      border: 1px solid #2a2a2c;
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      text-decoration: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .link-card:hover { border-color: #538d4e; background: rgba(83,141,78,0.07); }
+    .link-card.unconfigured { opacity: 0.35; pointer-events: none; }
+    .link-icon { font-size: 1.05rem; flex-shrink: 0; }
+    .link-label { font-size: 0.8rem; font-weight: 600; }
+    .link-sub   { font-size: 0.68rem; color: #818384; margin-top: 0.1rem; }
+
+    /* ── CI ── */
+    .ci-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .ci-badge {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      border-radius: 5px; padding: 0.3rem 0.75rem;
+      font-size: 0.8rem; font-weight: 700;
+    }
+    .ci-badge.success { background: rgba(83,141,78,.2);  color: #538d4e; }
+    .ci-badge.failure { background: rgba(229,62,62,.2);  color: #fc8181; }
+    .ci-badge.running { background: rgba(181,159,59,.2); color: #fde68a; }
+    .ci-badge.unknown { background: #2a2a2c;             color: #818384; }
+    .ci-link { font-size: 0.75rem; color: #818384; text-decoration: none; }
+    .ci-link:hover { color: #fff; }
+
+    /* ── Commits ── */
+    .commits-list { list-style: none; }
+    .commit-item {
+      display: grid;
+      grid-template-columns: 4.5rem 1fr auto;
+      align-items: baseline;
+      gap: 0.6rem;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid #1e1e1f;
+      font-size: 0.8rem;
+    }
+    .commit-item:last-child { border-bottom: none; }
+    .commit-sha {
+      font-family: monospace;
+      color: #538d4e;
+      font-size: 0.72rem;
+      text-decoration: none;
+    }
+    .commit-sha:hover { text-decoration: underline; }
+    .commit-msg { color: #d1d1d1; line-height: 1.4; }
+    .commit-date { font-size: 0.68rem; color: #818384; white-space: nowrap; text-align: right; }
+
+    /* ── Footer ── */
+    #last-updated { font-size: 0.68rem; color: #3a3a3c; text-align: right; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div>
+      <h1>Wordle Assistant — Status</h1>
+      <p class="subtitle">Deployment health, links &amp; recent activity</p>
+    </div>
+    <button id="refresh-btn"><span class="spin-icon">↺</span> Refresh</button>
+  </header>
+
+  <!-- Version mismatch -->
+  <div id="version-banner"></div>
+
+  <!-- Environment health -->
+  <section>
+    <h2 class="section-title">Environment Health</h2>
+    <div class="env-grid">
+
+      <div class="env-card">
+        <div class="env-label">Production — API</div>
+        <div class="status-row" id="prod-api-status">
+          <span class="dot loading"></span>
+          <span class="status-text unknown">Checking…</span>
+        </div>
+        <div class="env-meta" id="prod-api-meta"></div>
+        <a class="open-link" id="prod-api-link" href="__RAILWAY_PROD_URL__/health" target="_blank" rel="noopener">Health endpoint ↗</a>
+      </div>
+
+      <div class="env-card">
+        <div class="env-label">Production — Frontend</div>
+        <div class="status-row" id="prod-fe-status">
+          <span class="dot loading"></span>
+          <span class="status-text unknown">Checking…</span>
+        </div>
+        <div class="env-meta" id="prod-fe-meta"></div>
+        <a class="open-link" id="prod-fe-link" href="__VERCEL_PROD_URL__" target="_blank" rel="noopener">Open app ↗</a>
+      </div>
+
+      <div class="env-card">
+        <div class="env-label">Staging — API</div>
+        <div class="status-row" id="staging-api-status">
+          <span class="dot loading"></span>
+          <span class="status-text unknown">Checking…</span>
+        </div>
+        <div class="env-meta" id="staging-api-meta"></div>
+        <a class="open-link" id="staging-api-link" href="__RAILWAY_STAGING_URL__/health" target="_blank" rel="noopener">Health endpoint ↗</a>
+      </div>
+
+      <div class="env-card">
+        <div class="env-label">Staging — Frontend</div>
+        <div class="status-row" id="staging-fe-status">
+          <span class="dot loading"></span>
+          <span class="status-text unknown">Checking…</span>
+        </div>
+        <div class="env-meta" id="staging-fe-meta"></div>
+        <a class="open-link" id="staging-fe-link" href="__VERCEL_STAGING_URL__" target="_blank" rel="noopener">Open app ↗</a>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Quick links -->
+  <section>
+    <h2 class="section-title">Quick Links</h2>
+    <div class="links-grid">
+      <a class="link-card" id="lnk-prod"     href="__VERCEL_PROD_URL__"      target="_blank" rel="noopener">
+        <span class="link-icon">🌐</span>
+        <span><div class="link-label">Production</div><div class="link-sub">Live app</div></span>
+      </a>
+      <a class="link-card" id="lnk-staging"  href="__VERCEL_STAGING_URL__"   target="_blank" rel="noopener">
+        <span class="link-icon">🧪</span>
+        <span><div class="link-label">Staging</div><div class="link-sub">Preview app</div></span>
+      </a>
+      <a class="link-card" id="lnk-vercel"   href="__VERCEL_DASHBOARD_URL__" target="_blank" rel="noopener">
+        <span class="link-icon">▲</span>
+        <span><div class="link-label">Vercel</div><div class="link-sub">Dashboard</div></span>
+      </a>
+      <a class="link-card" id="lnk-railway"  href="__RAILWAY_DASHBOARD_URL__" target="_blank" rel="noopener">
+        <span class="link-icon">🚂</span>
+        <span><div class="link-label">Railway</div><div class="link-sub">Dashboard</div></span>
+      </a>
+      <a class="link-card" href="https://github.com/omripalmon/wordle-assistant" target="_blank" rel="noopener">
+        <span class="link-icon">⑂</span>
+        <span><div class="link-label">GitHub</div><div class="link-sub">Repository</div></span>
+      </a>
+      <a class="link-card" href="https://github.com/omripalmon/wordle-assistant/actions/workflows/ci.yml" target="_blank" rel="noopener">
+        <span class="link-icon">✓</span>
+        <span><div class="link-label">CI Tests</div><div class="link-sub">GitHub Actions</div></span>
+      </a>
+      <a class="link-card" href="/tests.html">
+        <span class="link-icon">🔬</span>
+        <span><div class="link-label">Regression</div><div class="link-sub">Tests page</div></span>
+      </a>
+    </div>
+  </section>
+
+  <!-- CI status -->
+  <section>
+    <h2 class="section-title">CI Status (main)</h2>
+    <div class="ci-row">
+      <span id="ci-badge" class="ci-badge unknown">— Loading…</span>
+      <a class="ci-link"
+         href="https://github.com/omripalmon/wordle-assistant/actions/workflows/ci.yml"
+         target="_blank" rel="noopener">View all runs on GitHub ↗</a>
+    </div>
+  </section>
+
+  <!-- Recent commits -->
+  <section>
+    <h2 class="section-title">Recent Commits (main)</h2>
+    <ul id="commits-list" class="commits-list">
+      <li style="color:#818384;font-size:0.8rem;padding:.5rem 0">Loading…</li>
+    </ul>
+  </section>
+
+  <p id="last-updated"></p>
+
+</div><!-- .container -->
+
+<script>
+  const GH_REPO         = "omripalmon/wordle-assistant";
+  const PROD_API_URL     = "__RAILWAY_PROD_URL__";
+  const STAGING_API_URL  = "__RAILWAY_STAGING_URL__";
+  const PROD_FE_URL      = "__VERCEL_PROD_URL__";
+  const STAGING_FE_URL   = "__VERCEL_STAGING_URL__";
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function isSet(v) { return v && !v.startsWith("__"); }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function relativeTime(iso) {
+    const diff = (Date.now() - new Date(iso)) / 1000;
+    if (diff < 60)   return `${Math.round(diff)}s ago`;
+    if (diff < 3600) return `${Math.round(diff/60)}m ago`;
+    if (diff < 86400)return `${Math.round(diff/3600)}h ago`;
+    return new Date(iso).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+  }
+
+  function setStatus(rowId, state, label, meta) {
+    const row = document.getElementById(rowId);
+    row.innerHTML =
+      `<span class="dot ${state}"></span>` +
+      `<span class="status-text ${state}">${esc(label)}</span>`;
+    if (meta !== undefined) {
+      document.getElementById(rowId.replace("-status", "-meta")).textContent = meta;
+    }
+  }
+
+  // Hide open-links that point at unconfigured placeholders
+  document.querySelectorAll(".open-link, .link-card").forEach(el => {
+    const href = el.getAttribute("href") || "";
+    if (!isSet(href)) el.classList.add("unconfigured", "hidden");
+  });
+
+  // ── API health check ───────────────────────────────────────────────────────
+
+  async function checkApi(url, statusId, metaId) {
+    if (!isSet(url)) {
+      setStatus(statusId, "unknown", "Not configured");
+      return null;
+    }
+    try {
+      const res = await fetch(`${url.replace(/\/$/,"")}/health`,
+        { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const d = await res.json();
+        const parts = [];
+        if (d.words_loaded) parts.push(`${d.words_loaded} words`);
+        if (d.sha && d.sha !== "unknown") parts.push(`sha ${d.sha.slice(0,7)}`);
+        setStatus(statusId, "online", "Online", parts.join(" · "));
+        return d.sha && d.sha !== "unknown" ? d.sha : null;
+      }
+      if (res.status === 502 || res.status === 503) {
+        setStatus(statusId, "degraded", "Deploying…", `HTTP ${res.status}`);
+      } else {
+        setStatus(statusId, "offline", `Error ${res.status}`);
+      }
+    } catch {
+      setStatus(statusId, "offline", "Offline");
+    }
+    return null;
+  }
+
+  // ── FE health check (no-cors HEAD — resolves if server is reachable) ───────
+
+  async function checkFe(url, statusId) {
+    if (!isSet(url)) { setStatus(statusId, "unknown", "Not configured"); return; }
+    try {
+      await fetch(url, { method: "HEAD", mode: "no-cors", signal: AbortSignal.timeout(8000) });
+      setStatus(statusId, "online", "Online");
+    } catch {
+      setStatus(statusId, "offline", "Offline");
+    }
+  }
+
+  // ── Version mismatch ───────────────────────────────────────────────────────
+
+  function maybeShowMismatch(prodSha, stagingSha) {
+    const banner = document.getElementById("version-banner");
+    if (!prodSha || !stagingSha || prodSha === stagingSha) return;
+    banner.style.display = "block";
+    banner.innerHTML =
+      `⚠ Production and staging are on <strong>different versions</strong> — ` +
+      `prod: <code>${prodSha.slice(0,7)}</code>, staging: <code>${stagingSha.slice(0,7)}</code>. ` +
+      `Run the <a href="https://github.com/omripalmon/wordle-assistant/actions/workflows/promote.yml" ` +
+      `target="_blank" rel="noopener" style="color:#fde68a">Promote workflow</a> to sync them.`;
+  }
+
+  // ── CI status ──────────────────────────────────────────────────────────────
+
+  async function loadCI() {
+    const badge = document.getElementById("ci-badge");
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/actions/workflows/ci.yml/runs?per_page=1&branch=main`,
+        { headers: { Accept: "application/vnd.github+json" } }
+      );
+      const data = await res.json();
+      const run = data.workflow_runs?.[0];
+      if (!run) { badge.className = "ci-badge unknown"; badge.textContent = "No runs found"; return; }
+
+      const { conclusion, status, html_url } = run;
+      if (conclusion === "success") {
+        badge.className = "ci-badge success"; badge.innerHTML = "✓ Passing";
+      } else if (conclusion === "failure" || conclusion === "timed_out") {
+        badge.className = "ci-badge failure"; badge.innerHTML = "✗ Failed";
+      } else if (status === "in_progress" || status === "queued") {
+        badge.className = "ci-badge running"; badge.innerHTML = "⟳ Running";
+      } else {
+        badge.className = "ci-badge unknown"; badge.textContent = conclusion || status || "Unknown";
+      }
+    } catch {
+      badge.className = "ci-badge unknown"; badge.textContent = "Unable to fetch";
+    }
+  }
+
+  // ── Recent commits ─────────────────────────────────────────────────────────
+
+  async function loadCommits() {
+    const list = document.getElementById("commits-list");
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/commits?per_page=10&sha=main`,
+        { headers: { Accept: "application/vnd.github+json" } }
+      );
+      const commits = await res.json();
+      if (!Array.isArray(commits)) throw new Error("unexpected response");
+
+      list.innerHTML = "";
+      for (const c of commits) {
+        const sha  = c.sha.slice(0, 7);
+        const msg  = c.commit.message.split("\n")[0];
+        const date = relativeTime(c.commit.committer.date);
+        const li   = document.createElement("li");
+        li.className = "commit-item";
+        li.innerHTML =
+          `<a class="commit-sha" href="${c.html_url}" target="_blank" rel="noopener">${sha}</a>` +
+          `<span class="commit-msg">${esc(msg)}</span>` +
+          `<span class="commit-date">${date}</span>`;
+        list.appendChild(li);
+      }
+    } catch {
+      list.innerHTML = '<li style="color:#818384;font-size:.8rem;padding:.5rem 0">Unable to load commits.</li>';
+    }
+  }
+
+  // ── Main refresh ───────────────────────────────────────────────────────────
+
+  async function runAll() {
+    const btn = document.getElementById("refresh-btn");
+    btn.classList.add("spinning");
+    btn.disabled = true;
+    document.getElementById("version-banner").style.display = "none";
+
+    const [prodSha, stagingSha] = await Promise.all([
+      checkApi(PROD_API_URL,    "prod-api-status",    "prod-api-meta"),
+      checkApi(STAGING_API_URL, "staging-api-status", "staging-api-meta"),
+      checkFe(PROD_FE_URL,      "prod-fe-status"),
+      checkFe(STAGING_FE_URL,   "staging-fe-status"),
+      loadCI(),
+      loadCommits(),
+    ]);
+
+    maybeShowMismatch(prodSha, stagingSha);
+    document.getElementById("last-updated").textContent =
+      `Last updated: ${new Date().toLocaleTimeString()}`;
+    btn.classList.remove("spinning");
+    btn.disabled = false;
+  }
+
+  document.getElementById("refresh-btn").addEventListener("click", runAll);
+  runAll();
+</script>
+</body>
+</html>

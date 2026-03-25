@@ -130,6 +130,9 @@ except FileNotFoundError as exc:
 
 WORD_SET: set[str] = set(RAW_WORDS)
 
+# Git commit SHA injected by Railway at deploy time; "unknown" in local dev.
+GIT_SHA: str = os.environ.get("RAILWAY_GIT_COMMIT_SHA", "unknown")
+
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
@@ -169,8 +172,8 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Liveness probe — returns OK plus word list size."""
-    return {"status": "ok", "words_loaded": str(len(RAW_WORDS))}
+    """Liveness probe — returns OK, word list size, and deployed commit SHA."""
+    return {"status": "ok", "words_loaded": str(len(RAW_WORDS)), "sha": GIT_SHA}
 
 
 @app.get("/debug")
