@@ -247,6 +247,17 @@ def main():
     else:
         answers_list, _ = load_nyt_wordlists(args.answers)
         words = answers_list
+
+    # Check if any guess was solved (all greens)
+    for entry in args.guess:
+        word_part, response_part = entry.split(",", 1)
+        if response_part.strip().lower() == "ggggg":
+            solved_word = word_part.strip().lower()
+            print(f"Congratulations! You solved it: {solved_word}")
+            if solved_word not in words:
+                print(f"Warning: '{solved_word}' is not in the dictionary.")
+            return
+
     results = filter_words(
         words,
         known_positions=known_positions or None,

@@ -917,6 +917,13 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
             if word.replace("?", "").strip() != "" and word.isalpha()
         ]
         guess_args = [f"{word},{response}" for word, response in known_guesses]
+
+        # Check if the puzzle is already solved (any guess with all-green response)
+        solved_word: str | None = next(
+            (word for word, response in known_guesses if response == "ggggg"),
+            None,
+        )
+
         try:
             known_positions, excluded_positions, min_occurrences, max_occurrences = (
                 parse_guesses(guess_args) if guess_args else ({}, {}, {}, {})
@@ -1006,6 +1013,9 @@ async def analyze(image: UploadFile = File(...)) -> dict[str, Any]:
 
         return {
             "guesses": guesses_payload,
+            "solved": solved_word is not None,
+            "solved_word": solved_word,
+            "solved_in_dictionary": (solved_word in set(RAW_WORDS)) if solved_word else None,
             "candidates": candidates,
             "candidate_count": n,
             "top_suggestions": top_suggestions,

@@ -488,6 +488,26 @@
     function renderResults(data) {
       spinner.style.display = "none";
 
+      // 0a. Solved — show congratulation and stop
+      const existingSolved = document.getElementById("solved-banner");
+      if (existingSolved) existingSolved.remove();
+      if (data.solved && data.solved_word) {
+        const banner = document.createElement("div");
+        banner.id = "solved-banner";
+        banner.style.cssText = "margin-top:2rem;text-align:center;";
+        banner.innerHTML = `
+          <div style="font-size:3rem;margin-bottom:0.5rem;">🎉</div>
+          <div style="font-size:1.5rem;font-weight:700;letter-spacing:0.15em;color:#538d4e;text-transform:uppercase;">
+            ${data.solved_word}
+          </div>
+          <div style="color:#818384;font-size:0.9rem;margin-top:0.4rem;">Puzzle solved — congratulations!</div>
+          ${!data.solved_in_dictionary ? `<div style="margin-top:0.75rem;background:#2c1a00;border:1px solid #b59f3b;border-radius:8px;padding:0.6rem 1rem;color:#fde68a;font-size:0.85rem;display:inline-block;">⚠ '${data.solved_word.toUpperCase()}' is not in our word list.</div>` : ""}
+        `;
+        document.body.appendChild(banner);
+        banner.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
       // 0. OCR warning banner
       const existingWarn = document.getElementById("ocr-warning");
       if (existingWarn) existingWarn.remove();
